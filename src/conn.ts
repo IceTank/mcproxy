@@ -1,6 +1,7 @@
 import { Bot, BotOptions, createBot } from 'mineflayer';
 import type { Client as mcpClient, PacketMeta } from 'minecraft-protocol';
 import { generatePackets } from './packets';
+const { generators } = require("minecraft-packets")
 
 export type Packet = [name: string, data: any];
 
@@ -54,6 +55,7 @@ export class Conn {
   writingPclient: Client | undefined;
   receivingPclients: Client[] = [];
   pclients: Client[] = [];
+  packetGenerator: any
   toClientDefaultMiddleware?: PacketMiddleware = undefined;
   toServerDefaultMiddleware?: PacketMiddleware = undefined;
   write: (name: string, data: any) => void = () => {};
@@ -68,6 +70,9 @@ export class Conn {
     this.write = this.bot._client.write.bind(this.bot._client);
     this.writeRaw = this.bot._client.writeRaw.bind(this.bot._client);
     this.writeChannel = this.bot._client.writeChannel.bind(this.bot._client);
+    const mcData = require('minecraft-data')(this.bot.version)
+    const { VersionGenerator } = generators[mcData.version.majorVersion]
+    this.packetGenerator = new VersionGenerator(this.bot)
     if (options?.toClientMiddleware) this.toClientDefaultMiddleware = options.toClientMiddleware;
     if (options?.toServerMiddleware) this.toServerDefaultMiddleware = options.toServerMiddleware;
 
@@ -280,8 +285,19 @@ export class Conn {
 
   //* generates and sends packets suitable to a client
   sendPackets(pclient: Client) {
-    console.info('sendPackets')
-    this.generatePackets(pclient).forEach((packet) => pclient.write(...packet));
+    console.info('sendPackets for', this.bot.majorVersion)
+    // if (this.bot.majorVersion === '1.18') {
+    //   const packets = this.packetGenerator.packetsLoginSequence() as { name: string, data: any }[]
+    //   packets.forEach(p => {
+    //     pclient.write(p.name, p.data)
+    //   })
+    // } else { 
+    //   this.generatePackets(pclient).forEach((packet) => pclient.write(...packet));
+    // }
+    const packets = this.packetGenerator.packetsLoginSequence() as { name: string, data: any }[]
+    packets.forEach(p => {
+      pclient.write(p.name, p.data)
+    })
   }
   //* generates packets ([if provided] suitable to a client)
   generatePackets(pclient?: Client): Packet[] {

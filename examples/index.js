@@ -1,13 +1,13 @@
 // import mcproxy, replace ".."
 // with "@rob9315/mcproxy" in your project
-const mcproxy = require("..");
-const minecraft_protocol = require("minecraft-protocol");
+const mcproxy = require("..")
+const minecraft_protocol = require("minecraft-protocol")
 
 // initialize bot instance like you would with mineflayer
 // https://github.com/PrismarineJS/mineflayer
 let conn = new mcproxy.Conn({
   username: "proxyBot",
-  version: "1.12.2",
+  version: "1.18.2",
   host: "localhost",
   port: 25565,
 });
@@ -16,7 +16,7 @@ let conn = new mcproxy.Conn({
 conn.bot.on("spawn", async () => {
   //   await new Promise((ret) => setTimeout(ret, 1000));
   console.log("spawn");
-  conn.generatePackets();
+  // conn.generatePackets();
   //   console.log();
 });
 conn.bot.on("error", (err) => {
@@ -30,7 +30,7 @@ conn.bot.on("end", (reason) => {
 // open a server
 // https://github.com/PrismarineJS/node-minecraft-protocol
 const server = minecraft_protocol.createServer({
-  version: "1.12.2",
+  version: "1.18.2",
   host: "localhost",
   "online-mode": false,
   port: 25566,
