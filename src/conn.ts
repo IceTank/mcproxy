@@ -1,7 +1,7 @@
 import { Bot, BotOptions, createBot } from 'mineflayer';
 import type { Client as mcpClient, PacketMeta } from 'minecraft-protocol';
-import { generatePackets } from './packets';
 const { generators } = require("minecraft-packets")
+const bufferEqual = require('buffer-equal');
 
 export type Packet = [name: string, data: any];
 
@@ -9,28 +9,16 @@ export type ClientEventTuple = [event: string, listener: (...args: any) => void]
 export type ClientEvents = (ClientEventTuple | ((conn: Conn, pclient: Client) => ClientEventTuple))[];
 
 export type Client = mcpClient & {
-  //* whitelist overwrites not being the main pclient
-  toServerWhiteList?: string[];
-  //* filter for when the client is the main client
-  toServerBlackList?: string[];
-  //* filter when the client is attached
-  toClientBlackList?: string[];
-
   toClientMiddlewares: PacketMiddleware[];
   toServerMiddlewares: PacketMiddleware[];
 };
 
 export class ConnOptions {
-  events: ClientEvents = [];
-  //* a whitelist for the internal bot
-  internalWhitelist: string[] = ['keep_alive'];
-  //* filter for the main client as long as it is not overwritten by the client itself
-  toServerBlackList: string[] = ['keep_alive'];
-  //* filter for all attached clients if it is not overwritten by the client
-  toClientBlackList: string[] = ['keep_alive'];
+  optimizePacketWrite: boolean = true;
   //* Middleware to control packets being send to the client and server
-  toClientMiddleware?: PacketMiddleware = (): void | Promise<void> => {}
-  toServerMiddleware?: PacketMiddleware = (): void | Promise<void> => {}
+  toClientMiddleware?: PacketMiddleware[] = [() => {}];
+  //* Middleware to control packets being send to the client and server
+  toServerMiddleware?: PacketMiddleware[] = [() => {}];
 }
 
 export interface packetCanceler {
@@ -41,6 +29,11 @@ export interface packetCanceler {
   isCanceled: boolean
 } 
 
+export interface packetUpdater {
+  (update?: boolean): void;
+  isUpdated: boolean;
+}
+
 export interface PacketMiddleware {
   (info: {
     bound: 'server' | 'client',
@@ -50,14 +43,20 @@ export interface PacketMiddleware {
 }
 
 export class Conn {
+  packetGenerator: any
   options: ConnOptions;
   bot: Bot & { recipes: number[] };
+  /** Internal whitelist for the bot */
+  private internalWhitelist: string[] = ['keep_alive'];
+  optimizePacketWrite: boolean = true;
+  /** Contains the currently writing client or undefined if there is none */
   writingPclient: Client | undefined;
+  /** Contains clients that are actively receiving packets from the proxy bot */
   receivingPclients: Client[] = [];
+  /** Contains all connected clients. Even when they are not receiving or sending any packets */
   pclients: Client[] = [];
-  packetGenerator: any
-  toClientDefaultMiddleware?: PacketMiddleware = undefined;
-  toServerDefaultMiddleware?: PacketMiddleware = undefined;
+  toClientDefaultMiddleware?: PacketMiddleware[] = undefined;
+  toServerDefaultMiddleware?: PacketMiddleware[] = undefined;
   write: (name: string, data: any) => void = () => {};
   writeRaw: (buffer: any) => void = () => {};
   writeChannel: (channel: any, params: any) => void = () => {};
@@ -73,78 +72,75 @@ export class Conn {
     const mcData = require('minecraft-data')(this.bot.version)
     const { VersionGenerator } = generators[mcData.version.majorVersion]
     this.packetGenerator = new VersionGenerator(this.bot)
+    this.optimizePacketWrite = this.options.optimizePacketWrite;
     if (options?.toClientMiddleware) this.toClientDefaultMiddleware = options.toClientMiddleware;
     if (options?.toServerMiddleware) this.toServerDefaultMiddleware = options.toServerMiddleware;
 
-    this.bot._client.on('packet', this.onServerPacket.bind(this));
-    // this.options.events = [...defaultEvents, ...this.options.events];
+    this.internalWhitelist = ['keep_alive'];
+
+    this.bot._client.on('raw', this.onServerRaw.bind(this));
   }
 
   /**
-   * Handles Packets send by the server
-   * @param data Packet data
-   * @param meta Packet meta
+   * Called when the proxy bot receives a packet from the server. Forwards the packet to all attached and receiving clients taking
+   * attached middleware's into account.
+   * @param buffer Buffer
+   * @param meta
+   * @returns
    */
-  onServerPacket(data: any, meta: PacketMeta, buffer: Buffer) {
-    // Packet saving for world persistance
-    //* entity metadata tracking
-    if (data.metadata && data.entityId && this.bot.entities[data.entityId]) (this.bot.entities[data.entityId] as any).rawMetadata = data.metadata;
+  async onServerRaw(buffer: Buffer, meta: PacketMeta) {
+    // @ts-ignore-error
+    const packetData = this.bot._client.deserializer.parsePacketBuffer(buffer).data.params;
+    for (const pclient of this.receivingPclients) {
+      if (pclient.state !== states.PLAY || meta.state !== states.PLAY) {
+        return;
+      }
+      // Build packet canceler function used by middleware
+      const cancel: packetCanceler = Object.assign(
+        (unCancel: boolean = false) => {
+          cancel.isCanceled = unCancel ? false : true;
+          update.isUpdated = true;
+        },
+        { isCanceled: false }
+      );
+      const update: packetUpdater = Object.assign(
+        (unUpdate: boolean = false) => {
+          update.isUpdated = !!unUpdate;
+        },
+        { isUpdated: false }
+      );
 
-    //* recipe tracking https://wiki.vg/index.php?title=Protocol&oldid=14204#Unlock_Recipes
-    switch (meta.name) {
-      case 'unlock_recipes':
-        switch (data.action) {
-          case 0: //* initialize
-            this.bot.recipes = data.recipes1;
-            break;
-          case 1: //* add
-            this.bot.recipes = [...this.bot.recipes, ...data.recipes1];
-            break;
-          case 2: //* remove
-            this.bot.recipes = Array.from(
-              (data.recipes1 as number[]).reduce((recipes, recipe) => {
-                recipes.delete(recipe);
-                return recipes;
-              }, new Set(this.bot.recipes))
-            );
-            break;
-        }
-        break;
-      case 'abilities':
-        this.bot.physicsEnabled = !!((data.flags & 0b10) ^ 0b10);
-        break;
-    }
-
-    const sendPackets = async () => {
-      //* relay packet to all connected clients
-      for (const pclient of this.receivingPclients) {
-        // Build packet canceler function used by middleware
-        const cancel: packetCanceler = Object.assign((unCancel: boolean = false) => {
-          if (unCancel === false) {
-            cancel.isCanceled = false
-          }
-          cancel.isCanceled = true
-        }, { isCanceled: false })
-
-        for (const middleware of pclient.toClientMiddlewares) {
-          const funcReturn = middleware({ bound: 'client', meta, writeType: 'packet' }, pclient, data, cancel)
-          if (funcReturn instanceof Promise) {
-            await funcReturn
-          }
-        }
-        if (cancel.isCanceled === false) {
-          // TODO: figure out what packet is breaking crafting on 2b2t
-          // pclient.write(meta.name, data);
-          pclient.writeRaw(buffer);
+      for (const middleware of pclient.toClientMiddlewares) {
+        const funcReturn = middleware({ bound: 'client', meta, writeType: 'packet' }, pclient, packetData, cancel, update);
+        if (funcReturn instanceof Promise) {
+          await funcReturn;
         }
       }
+      // TODO: figure out what packet is breaking crafting on 2b2t
+      // Hint: It is the recipes unlock packet that is send when crafting an item.
+      // Probably some bad unlocked recipes packet reconstruction on login that is causing packets send after to crash the client.
+
+      if (cancel.isCanceled === false) {
+        if (!update.isUpdated && !this.optimizePacketWrite) {
+          pclient.writeRaw(buffer);
+          return;
+        }
+        if (this.optimizePacketWrite) {
+          // @ts-ignore-error
+          const packetBuff = pclient.serializer.createPacketBuffer({ name: meta.name, params: packetData });
+          if (!bufferEqual(buffer, packetBuff)) {
+            console.log('client<-server: Error in packet ' + meta.state + '.' + meta.name + ' This packet is breaking the proxy. Ping @Ic3Tank on NextGen discord');
+            pclient.writeRaw(buffer);
+            return;
+          }
+        }
+        pclient.write(meta.name, packetData);
+      }
     }
-    sendPackets()
-      .catch(console.error)
   }
 
   /**
-   * Handles packets send by a client
+   * Handles packets send by a client to a server taking attached middleware's into account.
    * @param data Packet data
    * @param meta Packet Meta
    * @param pclient Sending Client
@@ -152,27 +148,45 @@ export class Conn {
   onClientPacket(data: any, meta: PacketMeta, buffer: Buffer, pclient: Client) {
     const handle = async () => {
       // Build packet canceler function used by middleware
-      const cancel: packetCanceler = Object.assign((unCancel: boolean = false) => {
-        if (unCancel === false) {
-          cancel.isCanceled = false
-        }
-        cancel.isCanceled = true
-      }, { isCanceled: false })
-      for (const middleware of pclient.toServerMiddlewares) {
+      const cancel: packetCanceler = Object.assign(
+        (unCancel: boolean = false) => {
+          cancel.isCanceled = unCancel ? false : true;
+          update.isUpdated = true;
+        },
+        { isCanceled: false }
+      );
+      const update: packetUpdater = Object.assign(
+        (unUpdate: boolean = false) => {
+          update.isUpdated = !!unUpdate;
+        },
+        { isUpdated: false }
+      );
 
-        const funcReturn = middleware({ bound: 'server', meta, writeType: 'packet' }, pclient, data, cancel)
+      for (const middleware of pclient.toServerMiddlewares) {
+        const funcReturn = middleware({ bound: 'server', meta, writeType: 'packet' }, pclient, data, cancel, update);
         if (funcReturn instanceof Promise) {
-          await funcReturn
+          await funcReturn;
         }
       }
       if (cancel.isCanceled === false) {
+        if (!update.isUpdated && this.optimizePacketWrite) {
+          pclient.writeRaw(buffer);
+          return;
+        }
         // TODO: figure out what packet is breaking crafting on 2b2t
-        // this.write(meta.name, data);
-        this.writeRaw(buffer)
+        if (this.optimizePacketWrite) {
+          // @ts-ignore-error
+          const packetBuff = pclient.serializer.createPacketBuffer(data);
+          if (!bufferEqual(buffer, packetBuff)) {
+            console.log('server<-client: Error in packet ' + meta.state + '.' + meta.name + ' This packet is breaking the proxy. Ping @Ic3Tank on NextGen discord');
+            this.writeRaw(buffer);
+            return;
+          }
+        }
+        this.write(meta.name, data);
       }
-    }
-    handle()
-      .catch(console.error)
+    };
+    handle().catch(console.error);
   }
 
   /**
@@ -283,29 +297,16 @@ export class Conn {
     if (this.writingPclient === pclient) this.unlink()
   }
 
-  //* generates and sends packets suitable to a client
+  /**
+   * Send all packets to a client that are required to login to a server.
+   * @param pclient
+   */
   sendPackets(pclient: Client) {
     console.info('sendPackets for', this.bot.majorVersion)
-    // if (this.bot.majorVersion === '1.18') {
-    //   const packets = this.packetGenerator.packetsLoginSequence() as { name: string, data: any }[]
-    //   packets.forEach(p => {
-    //     pclient.write(p.name, p.data)
-    //   })
-    // } else { 
-    //   this.generatePackets(pclient).forEach((packet) => pclient.write(...packet));
-    // }
     const packets = this.packetGenerator.packetsLoginSequence() as { name: string, data: any }[]
     packets.forEach(p => {
       pclient.write(p.name, p.data)
     })
-  }
-  //* generates packets ([if provided] suitable to a client)
-  generatePackets(pclient?: Client): Packet[] {
-    let a = generatePackets(this.bot, pclient)
-    // for (const packet of a ) {
-    //   console.log(packet);
-    // }
-    return a
   }
 
   //* attaching means receiving all packets from the server
@@ -352,7 +353,7 @@ export class Conn {
 
   //* internal filter
   writeIf(name: string, data: any) {
-    if (this.options.internalWhitelist.includes(name)) this.write(name, data);
+    if (this.internalWhitelist.includes(name)) this.write(name, data);
   }
   //* disconnect from the server and ends, detaches all pclients
   disconnect() {
@@ -361,41 +362,41 @@ export class Conn {
   }
 }
 
-const defaultEvents: ClientEvents = [
-  (conn, pclient) => [
-    'packet',
-    (data, { name }, buffer) => {
-      //* check if client is authorized to modify connection (sending packets and state information from mineflayer)
-      if (pclient.toServerWhiteList?.includes(name) || (conn.writingPclient === pclient && !(pclient.toServerBlackList ?? conn.options.toServerBlackList).includes(name))) {
-        //* relay packet
-        conn.writeRaw(buffer);
-        //* keep mineflayer info up to date
-        switch (name) {
-          case 'position':
-            conn.bot.entity.position.x = data.x;
-            conn.bot.entity.position.y = data.y;
-            conn.bot.entity.position.z = data.z;
-            conn.bot.entity.onGround = data.onGround;
-            break;
-          case 'position_look': // FALLTHROUGH
-            conn.bot.entity.position.x = data.x;
-            conn.bot.entity.position.y = data.y;
-            conn.bot.entity.position.z = data.z;
-          case 'look':
-            conn.bot.entity.yaw = ((180 - data.yaw) * Math.PI) / 180;
-            conn.bot.entity.pitch = -(data.pitch * Math.PI) / 180;
-            conn.bot.entity.onGround = data.onGround;
-            break;
-          case 'held_item_slot':
-            conn.bot.quickBarSlot = data.slotId;
-            break;
-          case 'abilities':
-            conn.bot.physicsEnabled = !!((data.flags & 0b10) ^ 0b10);
-            break;
-        }
-      }
-    },
-  ],
-  (conn, pclient) => ['end', () => conn.detach(pclient)],
-  (conn, pclient) => ['error', () => conn.detach(pclient)],
-];
+// const defaultEvents: ClientEvents = [
+//   (conn, pclient) => [
+//     'packet',
+//     (data, { name }, buffer) => {
+//       //* check if client is authorized to modify connection (sending packets and state information from mineflayer)
+//       if (pclient.toServerWhiteList?.includes(name) || (conn.writingPclient === pclient && !(pclient.toServerBlackList ?? conn.options.toServerBlackList).includes(name))) {
+//         //* relay packet
+//         conn.writeRaw(buffer);
+//         //* keep mineflayer info up to date
+//         switch (name) {
+//           case 'position':
+//             conn.bot.entity.position.x = data.x;
+//             conn.bot.entity.position.y = data.y;
+//             conn.bot.entity.position.z = data.z;
+//             conn.bot.entity.onGround = data.onGround;
+//             break;
+//           case 'position_look': // FALLTHROUGH
+//             conn.bot.entity.position.x = data.x;
+//             conn.bot.entity.position.y = data.y;
+//             conn.bot.entity.position.z = data.z;
+//           case 'look':
+//             conn.bot.entity.yaw = ((180 - data.yaw) * Math.PI) / 180;
+//             conn.bot.entity.pitch = -(data.pitch * Math.PI) / 180;
+//             conn.bot.entity.onGround = data.onGround;
+//             break;
+//           case 'held_item_slot':
+//             conn.bot.quickBarSlot = data.slotId;
+//             break;
+//           case 'abilities':
+//             conn.bot.physicsEnabled = !!((data.flags & 0b10) ^ 0b10);
+//             break;
+//         }
+//       }
+//     },
+//   ],
+//   (conn, pclient) => ['end', () => conn.detach(pclient)],
+//   (conn, pclient) => ['error', () => conn.detach(pclient)],
+// ];

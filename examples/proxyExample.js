@@ -13,16 +13,16 @@ let conn = new mcproxy.Conn({
 });
 
 // do stuff with your bot
-conn.bot.on("spawn", async () => {
+conn.bot.on('spawn', async () => {
   //   await new Promise((ret) => setTimeout(ret, 1000));
   console.log("spawn");
   // conn.generatePackets();
   //   console.log();
 });
-conn.bot.on("error", (err) => {
+conn.bot.on('error', (err) => {
   console.error(err);
 });
-conn.bot.on("end", (reason) => {
+conn.bot.on('end', (reason) => {
   console.error(reason);
   process.exit(1);
 });
@@ -42,7 +42,7 @@ server.on('listening', () => {
 
 // accept client connections on your server,
 // make sure not to use "connection" instead of "login"
-server.on("login", async (client) => {
+server.on('login', async (client) => {
   // send packets recreating the current game state to the client
   conn.sendPackets(client);
 
