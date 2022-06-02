@@ -1,6 +1,7 @@
 import { Bot, BotOptions, createBot } from 'mineflayer';
 import type { Client as mcpClient, PacketMeta } from 'minecraft-protocol';
-const { generators } = require("minecraft-packets")
+import { states } from 'minecraft-protocol';
+const { generators } = require("prismarine-packet-generator")
 const bufferEqual = require('buffer-equal');
 
 export type Packet = [name: string, data: any];
@@ -34,12 +35,27 @@ export interface packetUpdater {
   isUpdated: boolean;
 }
 
-export interface PacketMiddleware {
-  (info: {
-    bound: 'server' | 'client',
-    writeType: 'packet' | 'rawPacket' | 'channel',
-    meta: PacketMeta
-  }, pclient: Client, data: any, cancel: packetCanceler): void | Promise<void>;
+/**
+ * Middleware manager for packets. Used to modify cancel or delay packets being send to the client or server.
+ */
+ export interface PacketMiddleware {
+  /** Contains meta information about the packet that is triggered. See the properties for more info. */
+  (
+    info: {
+      /** Direction the packet is going. Should always be the same direction depending on what middleware direction you
+       * are registering.
+       */
+      bound: 'server' | 'client';
+      /** Only 'packet' is implemented */
+      writeType: 'packet' | 'rawPacket' | 'channel';
+      /** Packet meta. Contains the packet name under `name` also see {@link PacketMeta} */
+      meta: PacketMeta;
+    },
+    /** The client connected to this packet */ pclient: Client,
+    /** Parsed packet data as returned by nmp */ data: any,
+    /** A handle to cancel a packet from being send. Can also force a packet to be send */ cancel: packetCanceler,
+    /** Indicate that a packet has been modified */ update: packetUpdater
+  ): void | Promise<void>;
 }
 
 export class Conn {
@@ -89,6 +105,7 @@ export class Conn {
    * @returns
    */
   async onServerRaw(buffer: Buffer, meta: PacketMeta) {
+    if (meta.state !== states.PLAY) return;
     // @ts-ignore-error
     const packetData = this.bot._client.deserializer.parsePacketBuffer(buffer).data.params;
     for (const pclient of this.receivingPclients) {
@@ -170,7 +187,7 @@ export class Conn {
       }
       if (cancel.isCanceled === false) {
         if (!update.isUpdated && this.optimizePacketWrite) {
-          pclient.writeRaw(buffer);
+          this.writeRaw(buffer);
           return;
         }
         // TODO: figure out what packet is breaking crafting on 2b2t
@@ -202,8 +219,6 @@ export class Conn {
     }, pclient: Client, data: any, cancel: packetCanceler) => {
       if (!this.receivingPclients.includes(pclient)) return cancel()
     })
-    // (conn, pclient) => ['end', () => conn.detach(pclient)],
-    // (conn, pclient) => ['error', () => conn.detach(pclient)],
   }
 
   /**
@@ -229,11 +244,9 @@ export class Conn {
         cancel()
       }
       if (this.writingPclient !== pclient) {
-        // console.info(info.meta.name, 'Client -> Server Canceled')
         return cancel()
       }
       if (info.meta.name === 'keep_alive') cancel()
-      // console.info(info.meta.name, 'Client -> Server not Canceled', this.writingPclient, pclient)
       //* keep mineflayer info up to date
       switch (name) {
         case 'position':
@@ -314,9 +327,6 @@ export class Conn {
     console.info('Attach')
     if (!this.pclients.includes(pclient)) {
       this.registerNewPClient(pclient, options)
-      // if (options && options.toClientMiddleware) pclient.toClientMiddleware = options.toClientMiddleware;
-      // this.pclients.push(pclient);
-      // this.options.events.map(customizeClientEvents(this, pclient)).forEach(([event, listener]) => pclient.on(event, listener));
     }
     if (!this.receivingPclients.includes(pclient)) {
       this.receivingPclients.push(pclient)
