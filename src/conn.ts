@@ -1,10 +1,13 @@
+Error.stackTraceLimit = 30
 import { Bot, BotOptions, createBot } from 'mineflayer';
 import { Client as mcpClient, PacketMeta } from 'minecraft-protocol';
 import { createClient } from 'minecraft-protocol';
 import { states } from 'minecraft-protocol';
 import { generatePackets } from './packets';
 import { StateData } from './stateData';
+import { IPositionTransformer, SimplePositionTransformer } from './positionTransformer';
 const bufferEqual = require('buffer-equal');
+import { Vec3 } from 'vec3'
 
 export type Packet = [name: string, data: any];
 
@@ -25,6 +28,7 @@ export class ConnOptions {
   toClientMiddleware?: PacketMiddleware[] = [];
   //* Middleware to control packets being sent from the client to the server
   toServerMiddleware?: PacketMiddleware[] = [];
+  positionTransformer?: IPositionTransformer | Vec3
 }
 
 export interface packetUpdater {
@@ -75,6 +79,7 @@ export class Conn {
   write: (name: string, data: any) => void;
   writeRaw: (buffer: any) => void;
   writeChannel: (channel: any, params: any) => void;
+  positionTransformer?: IPositionTransformer = undefined
   constructor(botOptions: BotOptions, options?: Partial<ConnOptions>) {
     this.options = { ...new ConnOptions(), ...options };
     this.client = createClient(botOptions);
@@ -90,6 +95,14 @@ export class Conn {
     if (options?.toClientMiddleware) this.toClientDefaultMiddleware = options.toClientMiddleware;
     if (options?.toServerMiddleware) this.toServerDefaultMiddleware = options.toServerMiddleware;
 
+    debugger
+    if (options?.positionTransformer) {
+      if (options.positionTransformer instanceof Vec3) {
+        this.positionTransformer = new SimplePositionTransformer(options.positionTransformer.scaled(1 / 16).floor().scale(16))
+      } else {
+        this.positionTransformer = options.positionTransformer
+      }
+    }
     // this.internalWhitelist = ['keep_alive'];
 
     this.client.on('raw', this.onServerRaw.bind(this));
@@ -210,6 +223,15 @@ export class Conn {
     const _internalMcProxyServerClient: PacketMiddleware = () => {
       if (!this.pclients.includes(pclient)) return false;
     };
+    if (this.positionTransformer) {
+      const trnasformer = this.positionTransformer
+      const _internalMcProxyServerClientCoordinatesSpoof: PacketMiddleware = (packetData) => {
+        const transformedData = trnasformer.onSToCPacket(packetData.meta.name, packetData.data)
+        if (transformedData) return transformedData
+        return false
+      }
+      pclient.toClientMiddlewares.push(_internalMcProxyServerClientCoordinatesSpoof)
+    }
     pclient.toClientMiddlewares.push(_internalMcProxyServerClient);
     if (this.toClientDefaultMiddleware) pclient.toClientMiddlewares.push(...this.toClientDefaultMiddleware);
   }
@@ -220,11 +242,16 @@ export class Conn {
    */
   private clientServerDefaultMiddleware(pclient: Client) {
     if (!pclient.toServerMiddlewares) pclient.toServerMiddlewares = [];
+    const transformer = this.positionTransformer
     const _internalMcProxyClientServer: PacketMiddleware = ({ meta, data }) => {
       if (meta.state !== 'play') return false;
       if (meta.name === 'teleport_confirm' && data?.teleportId === 0) {
+        let toSendPos: any = this.stateData.bot.entity.position
+        if (transformer) {
+          toSendPos = transformer.sToC.offset(this.stateData.bot.entity.position)
+        }
         pclient.write('position', {
-          ...this.stateData.bot.entity.position,
+          ...toSendPos,
           yaw: 180 - (this.stateData.bot.entity.yaw * 180) / Math.PI,
           pitch: -(this.stateData.bot.entity.pitch * 180) / Math.PI,
           teleportId: 1,
@@ -236,10 +263,19 @@ export class Conn {
         return false;
       }
       // Keep the bot updated from packets that are send by the controlling client to the server
-      this.stateData.onCToSPacket(meta.name, data);
+      // this.stateData.onCToSPacket(meta.name, data);
       if (meta.name === 'keep_alive') return false; // Already handled by the bot client
     };
     pclient.toServerMiddlewares.push(_internalMcProxyClientServer.bind(this));
+    if (this.positionTransformer) {
+      const transformer = this.positionTransformer
+      const _internalMcProxyClientServerCoordinatesSpoof: PacketMiddleware = (packetData) => {
+        const transformedData = transformer.onCToSPacket(packetData.meta.name, packetData.data)
+        if (transformedData) return transformedData
+        return false
+      }
+      pclient.toServerMiddlewares.push(_internalMcProxyClientServerCoordinatesSpoof)
+    }
     if (this.toServerDefaultMiddleware) pclient.toServerMiddlewares.push(...this.toServerDefaultMiddleware);
   }
 
@@ -273,7 +309,16 @@ export class Conn {
    * @param pclient Optional. Does nothing.
    */
   generatePackets(pclient?: Client): Packet[] {
-    return generatePackets(this.stateData, pclient);
+    if (this.positionTransformer) {
+      const transformer = this.positionTransformer
+      return generatePackets(this.stateData, pclient).map(packet => {
+        const [name, data] = packet
+        const transformedData = transformer.onSToCPacket(name, data)
+        return [name, transformedData ?? undefined]
+      });
+    } else {
+      return generatePackets(this.stateData, pclient)
+    }
   }
 
   /**
