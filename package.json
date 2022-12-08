@@ -19,6 +19,7 @@
   "scripts": {
     "build": "npx tsc",
     "prepublish": "npm run build",
+    "postinstall": "npm run build",
     "fix": "standard-markdown --fix"
   },
   "prettier": "@rob9315/prettier-config",
