@@ -95,18 +95,15 @@ export class Conn {
     if (options?.toClientMiddleware) this.toClientDefaultMiddleware = options.toClientMiddleware;
     if (options?.toServerMiddleware) this.toServerDefaultMiddleware = options.toServerMiddleware;
 
-    debugger
     if (options?.positionTransformer) {
       if (options.positionTransformer instanceof Vec3) {
-        this.positionTransformer = new SimplePositionTransformer(options.positionTransformer.scaled(1 / 16).floor().scale(16))
+        this.positionTransformer = new SimplePositionTransformer(options.positionTransformer.scaled(1 / 16).floor().scale(16), this.stateData.bot)
       } else {
         this.positionTransformer = options.positionTransformer
       }
     }
-    // this.internalWhitelist = ['keep_alive'];
 
     this.client.on('raw', this.onServerRaw.bind(this));
-    // this.bot._client.on('raw', this.onServerRaw.bind(this));
   }
 
   /**
@@ -224,11 +221,18 @@ export class Conn {
       if (!this.pclients.includes(pclient)) return false;
     };
     if (this.positionTransformer) {
-      const trnasformer = this.positionTransformer
+      const transformer = this.positionTransformer
       const _internalMcProxyServerClientCoordinatesSpoof: PacketMiddleware = (packetData) => {
-        const transformedData = trnasformer.onSToCPacket(packetData.meta.name, packetData.data)
-        if (transformedData) return transformedData
-        return false
+        const transformedData = transformer.onSToCPacket(packetData.meta.name, packetData.data)
+        const name = packetData.meta.name
+        if (!transformedData) return false
+        if (transformedData.length > 1) {
+          transformedData.forEach(packet => {
+            packetData.pclient?.write(packet[0], packet[1])
+          })
+          return false
+        }
+        return transformedData[0][1]
       }
       pclient.toClientMiddlewares.push(_internalMcProxyServerClientCoordinatesSpoof)
     }
@@ -299,7 +303,7 @@ export class Conn {
    * @param pclient
    */
   sendPackets(pclient: Client) {
-    this.generatePackets(pclient).forEach((packet) => pclient.write(...packet));
+    this.generatePackets(pclient).filter(p => !!p[1]).forEach((packet) => pclient.write(...packet));
   }
 
   /**
@@ -311,11 +315,19 @@ export class Conn {
   generatePackets(pclient?: Client): Packet[] {
     if (this.positionTransformer) {
       const transformer = this.positionTransformer
-      return generatePackets(this.stateData, pclient).map(packet => {
-        const [name, data] = packet
+      const packets: Packet[] = []
+      const offset = { offsetBlock: this.positionTransformer.sToC.offsetVec, offsetChunk: this.positionTransformer.sToC.offsetChunkVec }
+      for (const generatedPacket of generatePackets(this.stateData, pclient, offset)) {
+        const [name, data] = generatedPacket
+        if (name === 'map_chunk' || name === 'tile_entity_data') { // TODO: move offsetting into generatePackets
+          packets.push(generatedPacket)
+          continue
+        }
         const transformedData = transformer.onSToCPacket(name, data)
-        return [name, transformedData ?? undefined]
-      });
+        if (!transformedData) continue
+        packets.push(...transformedData)
+      }
+      return packets
     } else {
       return generatePackets(this.stateData, pclient)
     }

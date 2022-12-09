@@ -1,6 +1,10 @@
 import { PacketMeta } from "minecraft-protocol";
+import { Bot } from "mineflayer";
 import { Vec3 } from 'vec3'
-import { Client } from "./conn";
+import { Packet } from "./conn";
+import { chunkColumnToPacketsNew } from "./packets";
+
+const Chunk = require('prismarine-chunk')('1.12.2')
 
 interface CoordinatesXYZ {
   x: number
@@ -14,9 +18,11 @@ interface CoordinatesXZ {
 }
 
 abstract class ITransformer {
+  offsetChunkVec: Vec3
   offsetVec: Vec3
   constructor(offset: Vec3) {
-    this.offsetVec = offset
+    this.offsetChunkVec = offset.scaled(1/16).floor()
+    this.offsetVec = this.offsetChunkVec.scaled(16)
   }
 
   abstract offset(pos: Vec3): CoordinatesXYZ
@@ -26,9 +32,11 @@ abstract class ITransformer {
 }
 
 class Transformer implements ITransformer {
+  offsetChunkVec: Vec3
   offsetVec: Vec3
   constructor(offset: Vec3) {
-    this.offsetVec = offset.clone()
+    this.offsetChunkVec = offset.scaled(1/16).floor()
+    this.offsetVec = this.offsetChunkVec.scaled(16)
   }
 
   offset(pos: Vec3) {
@@ -75,18 +83,20 @@ export abstract class IPositionTransformer {
   }
 
   abstract onCToSPacket(name: string, data: any): any | false
-  abstract onSToCPacket(name: string, data: any): any | false
+  abstract onSToCPacket(name: string, data: any): Packet[] | false
 }
 
 export class SimplePositionTransformer implements IPositionTransformer {
   offset: Vec3
   sToC: Transformer
   cToS: Transformer
+  bot: Bot
 
-  constructor(offset: Vec3) {
+  constructor(offset: Vec3, bot: Bot) {
     this.offset = offset
     this.sToC = new Transformer(offset)
     this.cToS = new Transformer(offset.scaled(-1))
+    this.bot = bot
   }
 
   onCToSPacket(name: string, data: any): any | false {
@@ -122,19 +132,51 @@ export class SimplePositionTransformer implements IPositionTransformer {
     return transformed
   }
 
-  onSToCPacket(name: string, data: any): any | false {
+  onSToCPacket(name: string, data: any): Packet[] | false {
     if ('location' in data) {
-      if ('location' in data) {
-        data.location = this.sToC.offset(data.location)
-        return data
+      const { x, y, z } = this.sToC.offset(data.location)
+      const transformed = {
+        ...data,
+        location: {
+          x, y, z
+        }
       }
+      return [[name, transformed]]
     }
     if (name === 'sound_effect' || name === 'named_sound_effect') {
       const transformed = {
         ...data,
         ...this.sToC.offsetSound(data.x, data.y, data.z)
       }
-      return transformed
+      return [[name, transformed]]
+    }
+    if (name === 'unload_chunk') {
+      const { x, z } = this.sToC.offsetChunk(data.x, data.z)
+      const transformed = {
+        chunkX: x,
+        chunkZ: z
+      }
+      return [[name, transformed]]
+    }
+    if (name === 'map_chunk') {
+      const column = new Chunk({ minY: 0, worldHeight: 256 })
+      const transformerOffset = { offsetBlock: this.sToC.offsetVec, offsetChunk: this.sToC.offsetChunkVec }
+      column.load(data.chunkData, data.bitMap, data.skyLightSent, data.groundUp)
+      if (data.biomes !== undefined) {
+        column.loadBiomes(data.biomes)
+      }
+      if (data.skyLight !== undefined) {
+        column.loadParsedLight(data.skyLight, data.blockLight, data.skyLightMask, data.blockLightMask, data.emptySkyLightMask, data.emptyBlockLightMask)
+      }
+      if (data.blockEntities !== undefined && data.blockEntities.length > 0) {
+        debugger
+        for (const blockEntity of data.blockEntities) {
+          const pos = new Vec3(blockEntity.value.x.value & 0xf, blockEntity.value.y.value, blockEntity.value.z.value & 0xf)
+          column.setBlockEntity(pos, blockEntity)
+        }
+      }
+      const packets = chunkColumnToPacketsNew({ chunkX: Number(data.x), chunkZ: Number(data.z), column }, undefined, undefined, undefined, transformerOffset)
+      return packets
     }
 
     let transformed = data
@@ -155,7 +197,6 @@ export class SimplePositionTransformer implements IPositionTransformer {
           ...this.sToC.offsetXYZ(data.x, data.y, data.z)
         }
         break
-      case 'unload_chunk':
       case 'multi_block_change':
       case 'map_chunk':
         transformed = {
@@ -163,6 +204,6 @@ export class SimplePositionTransformer implements IPositionTransformer {
           ...this.sToC.offsetChunk(data.x, data.z)
         }
     }
-    return transformed
+    return [[name, transformed]]
   }
 }

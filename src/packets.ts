@@ -48,7 +48,7 @@ export function sendTo(pclient: Client, ...args: PacketTuple[]) {
   }
 }
 
-export function generatePackets(stateData: StateData, pclient?: Client): Packet[] {
+export function generatePackets(stateData: StateData, pclient?: Client, offset?: { offsetBlock: Vec3, offsetChunk: Vec3 }): Packet[] {
   const bot = stateData.bot;
   //* if not spawned yet, return nothing
   if (!bot.entity) return [];
@@ -187,7 +187,7 @@ export function generatePackets(stateData: StateData, pclient?: Client): Packet[
       }
       return packets;
     }, []),
-    ...(bot.world.getColumns() as any[]).reduce<Packet[]>((packets, chunk) => [...packets, ...chunkColumnToPackets(bot, chunk)], []),
+    ...(bot.world.getColumns() as any[]).reduce<Packet[]>((packets, chunk) => [...packets, ...chunkColumnToPacketsNew(chunk, undefined, undefined, undefined, offset)], []),
     //? `world_border` (as of 1.12.2) => really needed?
     //! block entities moved to chunk packet area
     ...Object.values(bot.entities).reduce<Packet[]>((packets, entity) => {
@@ -278,7 +278,73 @@ type NbtPositionTag = { type: 'int'; value: number };
 type BlockEntity = { x: NbtPositionTag; y: NbtPositionTag; z: NbtPositionTag; id: object };
 type ChunkEntity = { name: string; type: string; value: BlockEntity };
 //* splits a single chunk column into multiple packets if needed
-function chunkColumnToPackets(
+export function chunkColumnToPacketsNew(
+  { chunkX: x, chunkZ: z, column }: { chunkX: number; chunkZ: number; column: any },
+  lastBitMask?: number,
+  chunkData: SmartBuffer = new SmartBuffer(),
+  chunkEntities: ChunkEntity[] = [],
+  offset?: { offsetBlock: Vec3, offsetChunk: Vec3 }
+): Packet[] {
+  let bitMask = !!lastBitMask ? column.getMask() ^ (column.getMask() & ((lastBitMask << 1) - 1)) : column.getMask();
+  let bitMap = lastBitMask ?? 0b0;
+  let newChunkData = new SmartBuffer();
+  offset = offset ?? { offsetBlock: new Vec3(0, 0, 0), offsetChunk: new Vec3(0, 0, 0)}
+
+  // blockEntities
+  // chunkEntities.push(...Object.values(column.blockEntities as Map<string, ChunkEntity>));
+
+  // checks with bitmask if there is a chunk in memory that (a) exists and (b) was not sent to the client yet
+  for (let i = 0; i < 16; i++)
+    if (bitMask & (0b1 << i)) {
+      column.sections[i].write(newChunkData);
+      bitMask ^= 0b1 << i;
+      if (chunkData.length + newChunkData.length > MAX_CHUNK_DATA_LENGTH) {
+        if (!lastBitMask) column.biomes?.forEach((biome: number) => chunkData.writeUInt8(biome));
+        return [
+          ['map_chunk', { 
+            x: x - offset.offsetChunk.x, 
+            z: z - offset.offsetChunk.z, 
+            bitMap, chunkData: chunkData.toBuffer(), 
+            groundUp: !lastBitMask, blockEntities: [] 
+          }],
+          ...chunkColumnToPacketsNew({ chunkX: x, chunkZ: z, column }, 0b1 << i, newChunkData, undefined, offset),
+          ...getChunkEntityPacketsNew(column, column.blockEntities, offset),
+        ];
+      }
+      bitMap ^= 0b1 << i;
+      chunkData.writeBuffer(newChunkData.toBuffer());
+      newChunkData.clear();
+    }
+  if (!lastBitMask) column.biomes?.forEach((biome: number) => chunkData.writeUInt8(biome));
+  return [['map_chunk', { 
+    x: x - offset.offsetChunk.x, z: z - offset.offsetChunk.z, 
+    bitMap, chunkData: chunkData.toBuffer(), groundUp: !lastBitMask, blockEntities: [] 
+  }], ...getChunkEntityPacketsNew(column, column.blockEntities, offset)];
+}
+
+function getChunkEntityPacketsNew(column: any, blockEntities: { [pos: string]: ChunkEntity }, offset?: { offsetBlock: Vec3, offsetChunk: Vec3 }) {
+  offset = offset ?? { offsetBlock: new Vec3(0, 0, 0), offsetChunk: new Vec3(0, 0, 0)}
+  const packets: Packet[] = [];
+  if (Object.values(blockEntities).length > 0) {
+    debugger
+  }
+  for (const nbtData of Object.values(blockEntities)) {
+    const dx = offset.offsetBlock.x
+    const dz = offset.offsetBlock.z
+    const x = nbtData.value.x.value 
+    const y = nbtData.value.y.value
+    const z = nbtData.value.z.value
+    const location = { x: x - dx, y, z: z - dz };
+    packets.push(['tile_entity_data', { location, nbtData }]);
+    const block = column.getBlock(posInChunk(new Vec3(x, y, z)));
+    if (block?.name == 'minecraft:chest') {
+      packets.push(['block_action', { location, byte1: 1, byte2: 0, blockId: block.type }]);
+    }
+  }
+  return packets;
+}
+
+export function chunkColumnToPackets(
   bot: Bot,
   { chunkX: x, chunkZ: z, column }: { chunkX: number; chunkZ: number; column: any },
   lastBitMask?: number,
@@ -329,4 +395,8 @@ function getChunkEntityPackets(bot: Bot, blockEntities: { [pos: string]: ChunkEn
     }
   }
   return packets;
+}
+
+function posInChunk (pos: Vec3) {
+  return new Vec3(Math.floor(pos.x) & 15, Math.floor(pos.y), Math.floor(pos.z) & 15)
 }
