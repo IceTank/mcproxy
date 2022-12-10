@@ -325,24 +325,67 @@ export function chunkColumnToPacketsNew(
 function getChunkEntityPacketsNew(column: any, blockEntities: { [pos: string]: ChunkEntity }, offset?: { offsetBlock: Vec3, offsetChunk: Vec3 }) {
   offset = offset ?? { offsetBlock: new Vec3(0, 0, 0), offsetChunk: new Vec3(0, 0, 0)}
   const packets: Packet[] = [];
-  if (Object.values(blockEntities).length > 0) {
-    debugger
-  }
   for (const nbtData of Object.values(blockEntities)) {
-    const dx = offset.offsetBlock.x
-    const dz = offset.offsetBlock.z
-    const x = nbtData.value.x.value 
-    const y = nbtData.value.y.value
-    const z = nbtData.value.z.value
-    const location = { x: x - dx, y, z: z - dz };
-    packets.push(['tile_entity_data', { location, nbtData }]);
-    const block = column.getBlock(posInChunk(new Vec3(x, y, z)));
+    const locationOriginal = new Vec3(nbtData.value.x.value, nbtData.value.y.value, nbtData.value.z.value)
+    const location = locationOriginal.minus(offset.offsetBlock)
+    location.y = locationOriginal.y
+
+    const offsetNbt: ChunkEntity = {
+      ...nbtData,
+      value: {
+        ...nbtData.value
+      }
+    }
+    offsetNbt.value.id = nbtData.value.id
+    offsetNbt.value.x = clonePositionValueNbt(nbtData.value.x)
+    offsetNbt.value.y = clonePositionValueNbt(nbtData.value.y)
+    offsetNbt.value.z = clonePositionValueNbt(nbtData.value.z)
+
+    offsetNbt.value.x.value = location.x
+    offsetNbt.value.y.value = location.y
+    offsetNbt.value.z.value = location.z
+
+    const block = column.getBlock(posInChunk(location));
+    if (block.type === 138) { // Beacon
+      packets.push(['tile_entity_data', { location, nbtData: offsetNbt, action: 3 }]);
+    } else if (block.type === 144) { // Skull
+      packets.push(['tile_entity_data', { location, nbtData: offsetNbt, action: 4 }]);
+    } else if (block.type === 140) { // Flower pot
+      packets.push(['tile_entity_data', { location, nbtData: offsetNbt, action: 5 }]);
+    } else if (block.type === 176 || block.type === 177) { // Wall and standing banner
+      packets.push(['tile_entity_data', { location, nbtData: offsetNbt, action: 6 }]);
+    } else if (block.type === 209) { // End gateway
+      packets.push(['tile_entity_data', { location, nbtData: offsetNbt, action: 8 }]);
+    } else if (block.type === 63 || block.type === 68) { // Sign
+      packets.push(['tile_entity_data', { location, nbtData: offsetNbt, action: 9 }]);
+    } else if (block.type === 26) { // Bed
+      packets.push(['tile_entity_data', { location, nbtData: offsetNbt, action: 11 }]);
+    } else {
+      packets.push(['tile_entity_data', { location, nbtData: offsetNbt }])
+    }
     if (block?.name == 'minecraft:chest') {
       packets.push(['block_action', { location, byte1: 1, byte2: 0, blockId: block.type }]);
     }
   }
   return packets;
 }
+
+/**
+ * Tile_entity_data action:
+
+1: Set data of a mob spawner (everything except for SpawnPotentials: current delay, min/max delay, mob to be spawned, spawn count, spawn range, etc.)
+2: Set command block text (command and last execution status)
+3: Set the level, primary, and secondary powers of a beacon
+4: Set rotation and skin of mob head
+5: Set type of flower in flower pot
+6: Set base color and patterns on a banner
+7: Set the data for a Structure tile entity (??? what is that?)
+8: Set the destination for a end gateway
+9: Set the text on a sign
+10: Declare a shulker box, no data appears to be sent and the client seems to do fine without this packet. Perhaps it is a leftover from earlier versions?
+11: Set the color of a bed
+
+ */
 
 export function chunkColumnToPackets(
   bot: Bot,
@@ -382,14 +425,25 @@ export function chunkColumnToPackets(
 function getChunkEntityPackets(bot: Bot, blockEntities: { [pos: string]: ChunkEntity }) {
   const packets: Packet[] = [];
   for (const nbtData of Object.values(blockEntities)) {
-    const {
-      x: { value: x },
-      y: { value: y },
-      z: { value: z },
-    } = nbtData.value;
-    const location = { x, y, z };
-    packets.push(['tile_entity_data', { location, nbtData }]);
-    const block = bot.blockAt(new Vec3(x, y, z));
+    const location = new Vec3(nbtData.value.x.value, nbtData.value.y.value, nbtData.value.z.value)
+    const block = bot.blockAt(location);
+    if (block?.type === 138) { // Beacon
+      packets.push(['tile_entity_data', { location, nbtData, action: 3 }]);
+    } else if (block?.type === 144) { // Skull
+      packets.push(['tile_entity_data', { location, nbtData, action: 4 }]);
+    } else if (block?.type === 140) { // Flower pot
+      packets.push(['tile_entity_data', { location, nbtData, action: 5 }]);
+    } else if (block?.type === 176 || block?.type === 177) { // Wall and standing banner
+      packets.push(['tile_entity_data', { location, nbtData, action: 6 }]);
+    } else if (block?.type === 209) { // End gateway
+      packets.push(['tile_entity_data', { location, nbtData, action: 8 }]);
+    } else if (block?.type === 63 || block?.type === 68) { // Sign
+      packets.push(['tile_entity_data', { location, nbtData, action: 9 }]);
+    } else if (block?.type === 26) { // Bed
+      packets.push(['tile_entity_data', { location, nbtData, action: 11 }]);
+    } else {
+      packets.push(['tile_entity_data', { location, nbtData }])
+    }
     if (block?.name == 'minecraft:chest') {
       packets.push(['block_action', { location, byte1: 1, byte2: 0, blockId: block.type }]);
     }
@@ -399,4 +453,12 @@ function getChunkEntityPackets(bot: Bot, blockEntities: { [pos: string]: ChunkEn
 
 function posInChunk (pos: Vec3) {
   return new Vec3(Math.floor(pos.x) & 15, Math.floor(pos.y), Math.floor(pos.z) & 15)
+}
+
+function clonePositionValueNbt(input: NbtPositionTag) {
+  const clone: NbtPositionTag = {
+    type: 'int',
+    value: Number(input.value)
+  }
+  return clone
 }

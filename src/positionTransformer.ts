@@ -169,7 +169,6 @@ export class SimplePositionTransformer implements IPositionTransformer {
         column.loadParsedLight(data.skyLight, data.blockLight, data.skyLightMask, data.blockLightMask, data.emptySkyLightMask, data.emptyBlockLightMask)
       }
       if (data.blockEntities !== undefined && data.blockEntities.length > 0) {
-        debugger
         for (const blockEntity of data.blockEntities) {
           const pos = new Vec3(blockEntity.value.x.value & 0xf, blockEntity.value.y.value, blockEntity.value.z.value & 0xf)
           column.setBlockEntity(pos, blockEntity)
