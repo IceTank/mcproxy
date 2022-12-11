@@ -82,7 +82,7 @@ export class SimplePositionTransformer implements IPositionTransformer {
   sToC: Transformer
   cToS: Transformer
 
-  constructor(offset: Vec3, bot: Bot) {
+  constructor(offset: Vec3) {
     this.offset = offset
     this.sToC = new Transformer(offset)
     this.cToS = new Transformer(offset.scaled(-1))
