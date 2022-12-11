@@ -25,7 +25,6 @@ abstract class ITransformer {
     this.offsetVec = this.offsetChunkVec.scaled(16)
   }
 
-  abstract offset(pos: Vec3): CoordinatesXYZ
   abstract offsetXYZ(x: number, y: number, z: number): CoordinatesXYZ
   abstract offsetChunk(x: number, z: number): CoordinatesXZ
   abstract offsetSound(x: number, y: number, z: number): CoordinatesXYZ
@@ -37,14 +36,6 @@ class Transformer implements ITransformer {
   constructor(offset: Vec3) {
     this.offsetChunkVec = offset.scaled(1/16).floor()
     this.offsetVec = this.offsetChunkVec.scaled(16)
-  }
-
-  offset(pos: Vec3) {
-    return {
-      x: pos.x - this.offsetVec.x,
-      y: pos.y - this.offsetVec.y,
-      z: pos.z - this.offsetVec.z,
-    }
   }
 
   offsetXYZ(x: number, y: number, z: number) {
@@ -101,8 +92,13 @@ export class SimplePositionTransformer implements IPositionTransformer {
 
   onCToSPacket(name: string, data: any): any | false {
     if ('location' in data) {
-      data.location = this.cToS.offset(data.location)
-      return data
+      // This is important so we don't change the original object. 
+      // We create a new object and assign a new location property to it.
+      const transformed = { 
+        ...data,
+        location: this.cToS.offsetXYZ(data.location.x, data.location.y, data.location.z)
+      }
+      return transformed
     }
     let transformed = data
     switch (name) {
@@ -123,12 +119,9 @@ export class SimplePositionTransformer implements IPositionTransformer {
 
   onSToCPacket(name: string, data: any): Packet[] | false {
     if ('location' in data) {
-      const { x, y, z } = this.sToC.offset(data.location)
       const transformed = {
         ...data,
-        location: {
-          x, y, z
-        }
+        location: this.sToC.offsetXYZ(data.location.x, data.location.y, data.location.z)
       }
       return [[name, transformed]]
     }

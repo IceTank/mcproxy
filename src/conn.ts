@@ -252,7 +252,8 @@ export class Conn {
       if (meta.name === 'teleport_confirm' && data?.teleportId === 0) {
         let toSendPos: any = this.stateData.bot.entity.position
         if (transformer) {
-          toSendPos = transformer.sToC.offset(this.stateData.bot.entity.position)
+          const p = this.stateData.bot.entity.position
+          toSendPos = transformer.sToC.offsetXYZ(p.x, p.y, p.z)
         }
         pclient.write('position', {
           ...toSendPos,
