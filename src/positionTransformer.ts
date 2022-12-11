@@ -2,7 +2,7 @@ import { PacketMeta } from "minecraft-protocol";
 import { Bot } from "mineflayer";
 import { Vec3 } from 'vec3'
 import { Packet } from "./conn";
-import { chunkColumnToPacketsNew } from "./packets";
+import { chunkColumnToPacketsWithOffset } from "./packets";
 
 const Chunk = require('prismarine-chunk')('1.12.2')
 
@@ -156,7 +156,7 @@ export class SimplePositionTransformer implements IPositionTransformer {
           column.setBlockEntity(pos, blockEntity)
         }
       }
-      const packets = chunkColumnToPacketsNew({ chunkX: Number(data.x), chunkZ: Number(data.z), column }, undefined, undefined, undefined, transformerOffset)
+      const packets = chunkColumnToPacketsWithOffset({ chunkX: Number(data.x), chunkZ: Number(data.z), column }, undefined, undefined, undefined, transformerOffset)
       return packets
     }
 

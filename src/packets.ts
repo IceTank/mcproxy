@@ -187,7 +187,7 @@ export function generatePackets(stateData: StateData, pclient?: Client, offset?:
       }
       return packets;
     }, []),
-    ...(bot.world.getColumns() as any[]).reduce<Packet[]>((packets, chunk) => [...packets, ...chunkColumnToPacketsNew(chunk, undefined, undefined, undefined, offset)], []),
+    ...(bot.world.getColumns() as any[]).reduce<Packet[]>((packets, chunk) => [...packets, ...chunkColumnToPacketsWithOffset(chunk, undefined, undefined, undefined, offset)], []),
     //? `world_border` (as of 1.12.2) => really needed?
     //! block entities moved to chunk packet area
     ...Object.values(bot.entities).reduce<Packet[]>((packets, entity) => {
@@ -278,7 +278,7 @@ type NbtPositionTag = { type: 'int'; value: number };
 type BlockEntity = { x: NbtPositionTag; y: NbtPositionTag; z: NbtPositionTag; id: object };
 type ChunkEntity = { name: string; type: string; value: BlockEntity };
 //* splits a single chunk column into multiple packets if needed
-export function chunkColumnToPacketsNew(
+export function chunkColumnToPacketsWithOffset(
   { chunkX: x, chunkZ: z, column }: { chunkX: number; chunkZ: number; column: any },
   lastBitMask?: number,
   chunkData: SmartBuffer = new SmartBuffer(),
@@ -307,8 +307,8 @@ export function chunkColumnToPacketsNew(
             bitMap, chunkData: chunkData.toBuffer(), 
             groundUp: !lastBitMask, blockEntities: [] 
           }],
-          ...chunkColumnToPacketsNew({ chunkX: x, chunkZ: z, column }, 0b1 << i, newChunkData, undefined, offset),
-          ...getChunkEntityPacketsNew(column, column.blockEntities, offset),
+          ...chunkColumnToPacketsWithOffset({ chunkX: x, chunkZ: z, column }, 0b1 << i, newChunkData, undefined, offset),
+          ...getChunkEntityPacketsWithOffset(column, column.blockEntities, offset),
         ];
       }
       bitMap ^= 0b1 << i;
@@ -319,10 +319,10 @@ export function chunkColumnToPacketsNew(
   return [['map_chunk', { 
     x: x - offset.offsetChunk.x, z: z - offset.offsetChunk.z, 
     bitMap, chunkData: chunkData.toBuffer(), groundUp: !lastBitMask, blockEntities: [] 
-  }], ...getChunkEntityPacketsNew(column, column.blockEntities, offset)];
+  }], ...getChunkEntityPacketsWithOffset(column, column.blockEntities, offset)];
 }
 
-function getChunkEntityPacketsNew(column: any, blockEntities: { [pos: string]: ChunkEntity }, offset?: { offsetBlock: Vec3, offsetChunk: Vec3 }) {
+function getChunkEntityPacketsWithOffset(column: any, blockEntities: { [pos: string]: ChunkEntity }, offset?: { offsetBlock: Vec3, offsetChunk: Vec3 }) {
   offset = offset ?? { offsetBlock: new Vec3(0, 0, 0), offsetChunk: new Vec3(0, 0, 0)}
   const packets: Packet[] = [];
   for (const nbtData of Object.values(blockEntities)) {
