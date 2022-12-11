@@ -109,24 +109,13 @@ export class SimplePositionTransformer implements IPositionTransformer {
       case 'vehicle_move':
       case 'use_entity':
       case 'position_look':
+      case 'position':
         const { x, y, z } = data
         transformed = {
           ...data,
           ...this.cToS.offsetXYZ(x, y, z)
         }
         break
-      case 'position':
-        const flags = data.flags
-        let { x: dx, y: dy, z: dz } = this.cToS.offsetXYZ(data.x, data.y, data.z)
-        if (!(flags & 0x01)) {
-          transformed.x = dx
-        }
-        if (!(flags & 0x02)) {
-          transformed.y = dy
-        }
-        if (!(flags & 0x04)) {
-          transformed.z = dz
-        }
     }
 
     return transformed
@@ -190,10 +179,25 @@ export class SimplePositionTransformer implements IPositionTransformer {
       case 'vehicle_move':
       case 'world_particles':
       case 'named_entity_spawn':
-      case 'position':
         transformed = {
           ...data,
           ...this.sToC.offsetXYZ(data.x, data.y, data.z)
+        }
+        break
+      case 'position':
+        transformed = {
+          ...data
+        }
+        const flags = data.flags
+        let { x: dx, y: dy, z: dz } = this.sToC.offsetXYZ(data.x, data.y, data.z)
+        if (!(flags & 0x01)) {
+          transformed.x = dx
+        }
+        if (!(flags & 0x02)) {
+          transformed.y = dy
+        }
+        if (!(flags & 0x04)) {
+          transformed.z = dz
         }
         break
       case 'multi_block_change':

@@ -267,7 +267,12 @@ export class Conn {
         return false;
       }
       // Keep the bot updated from packets that are send by the controlling client to the server
-      // this.stateData.onCToSPacket(meta.name, data);
+      if (transformer) {
+        const offsetData = transformer.onCToSPacket(meta.name, data)
+        this.stateData.onCToSPacket(meta.name, offsetData);
+      } else {
+        this.stateData.onCToSPacket(meta.name, data);
+      }
       if (meta.name === 'keep_alive') return false; // Already handled by the bot client
     };
     pclient.toServerMiddlewares.push(_internalMcProxyClientServer.bind(this));
