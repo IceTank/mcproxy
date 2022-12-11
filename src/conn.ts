@@ -97,7 +97,7 @@ export class Conn {
 
     if (options?.positionTransformer) {
       if (options.positionTransformer instanceof Vec3) {
-        this.positionTransformer = new SimplePositionTransformer(options.positionTransformer.scaled(1 / 16).floor().scale(16), this.stateData.bot)
+        this.positionTransformer = new SimplePositionTransformer(options.positionTransformer.scaled(1 / 16).floor().scale(16))
       } else {
         this.positionTransformer = options.positionTransformer
       }
