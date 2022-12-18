@@ -3,6 +3,7 @@ import type { Client, Packet } from './conn';
 import { SmartBuffer } from 'smart-buffer';
 import { Vec3 } from 'vec3';
 import { StateData } from './stateData';
+import { Entity } from 'prismarine-entity'
 
 const MAX_CHUNK_DATA_LENGTH = 31598;
 
@@ -190,88 +191,133 @@ export function generatePackets(stateData: StateData, pclient?: Client, offset?:
     ...(bot.world.getColumns() as any[]).reduce<Packet[]>((packets, chunk) => [...packets, ...chunkColumnToPacketsWithOffset(chunk, undefined, undefined, undefined, offset)], []),
     //? `world_border` (as of 1.12.2) => really needed?
     //! block entities moved to chunk packet area
-    ...Object.values(bot.entities).reduce<Packet[]>((packets, entity) => {
-      switch (entity.type) {
-        case 'orb':
-          packets.push([
-            'spawn_entity_experience_orb',
-            {
-              ...entity.position,
-              entityId: entity.id,
-              count: entity.count,
-            },
-          ]);
-          break;
-
-        case 'mob':
-          packets.push(
-            [
-              'spawn_entity_living',
-              {
-                ...entity.position,
-                entityId: entity.id,
-                entityUUID: (entity as any).uuid,
-                type: entity.entityType,
-                yaw: entity.yaw,
-                pitch: entity.pitch,
-                headPitch: (entity as any).headPitch,
-                velocityX: entity.velocity.x,
-                velocityY: entity.velocity.y,
-                velocityZ: entity.velocity.z,
-                metadata: (entity as any).rawMetadata,
-              },
-            ],
-            ...entity.equipment.reduce((arr, item, slot) => {
-              if (item)
-                arr.push([
-                  'entity_equipment',
-                  {
-                    entityId: entity.id,
-                    slot,
-                    item: itemToNotch(item),
-                  },
-                ]);
-              return arr;
-            }, [] as Packet[])
-          );
-          break;
-
-        case 'object':
-          packets.push([
-            'spawn_entity',
-            {
-              ...entity.position,
-              entityId: entity.id,
-              objectUUID: (entity as any).uuid,
-              type: entity.entityType,
-              yaw: entity.yaw,
-              pitch: entity.pitch,
-              objectData: (entity as any).objectData,
-              velocityX: entity.velocity.x,
-              velocityY: entity.velocity.y,
-              velocityZ: entity.velocity.z,
-            },
-          ]);
-          break;
-
-        default:
-          //TODO add more?
-          break;
-      }
-      if ((entity as any).rawMetadata?.length > 0)
-        packets.push([
-          'entity_metadata',
-          {
-            entityId: entity.id,
-            metadata: (entity as any).rawMetadata,
-          },
-        ]);
-      return packets;
-    }, []),
+    ...spawnEntities(bot, itemToNotch),
     ...(bot.isRaining ? [['game_state_change', { reason: 1, gameMode: 0 }]] : []),
     ...((bot as any).rainState !== 0 ? [['game_state_change', { reason: 7, gameMode: (bot as any).rainState }]] : []),
     ...((bot as any).thunderState !== 0 ? [['game_state_change', { reason: 8, gameMode: (bot as any).thunderState }]] : []),
   ] as Packet[];
+}
+
+function getMetaArrayForEntity(entity: Entity) {
+  const meta = entity.metadata
+  const compArr = []
+    for (let i = 0; i < meta.length; i++) {
+      const data = meta[i]
+      switch (i) {
+        case 0: // On fire crouching etc
+          compArr.push({key: i, type: 0, value: data ? data : 0})
+          break
+        case 1: // Air time
+          compArr.push({ key: i, type: 1, value: data ? data : 300 })
+          break
+        case 2: // Custom name
+          compArr.push({ key: i, type: 3, value: data ? data : "" })
+          break
+        case 3: // Custom name visible
+          compArr.push({ key: i, type: 6, value: data ? data : false })
+          break
+        case 4: // Is silent
+          compArr.push({ key: i, type: 6, value: data ? data : false })
+          break
+        case 5: // Has no gravity
+          compArr.push({ key: i, type: 6, value: data ? data : false })
+          break
+        case 6: // Item in item frame?
+          compArr.push({ key: i, type: 5, value: data })
+      }
+    }
+    return compArr
+}
+
+function toYawWeird(num: number) {
+  return -(Math.floor(((num / Math.PI) * 128 + 255) % 256) - 127)
+}
+
+function spawnEntities(bot: Bot, itemToNotch: typeof import('prismarine-item').Item.toNotch) {
+  return Object.values(bot.entities).reduce<Packet[]>((packets, entity) => {
+    switch (entity.type) {
+      case 'orb':
+        packets.push([
+          'spawn_entity_experience_orb',
+          {
+            ...entity.position,
+            entityId: entity.id,
+            count: entity.count,
+          },
+        ]);
+        break;
+
+      case 'mob':
+        packets.push(
+          [
+            'spawn_entity_living',
+            {
+              ...entity.position,
+              entityId: entity.id,
+              entityUUID: (entity as any).uuid,
+              type: entity.entityType,
+              yaw: toYawWeird(entity.yaw),
+              pitch: entity.pitch,
+              headPitch: (entity as any).headPitch,
+              velocityX: entity.velocity.x,
+              velocityY: entity.velocity.y,
+              velocityZ: entity.velocity.z,
+              metadata: (entity as any).rawMetadata,
+            },
+          ],
+          ...entity.equipment.reduce((arr, item, slot) => {
+            if (item)
+              arr.push([
+                'entity_equipment',
+                {
+                  entityId: entity.id,
+                  slot,
+                  item: itemToNotch(item),
+                },
+              ]);
+            return arr;
+          }, [] as Packet[])
+        );
+        break;
+
+      case 'object':
+        packets.push([
+          'spawn_entity',
+          {
+            ...entity.position,
+            entityId: entity.id,
+            objectUUID: (entity as any).uuid,
+            type: entity.entityType,
+            yaw: toYawWeird(entity.yaw),
+            pitch: entity.pitch,
+            objectData: (entity as any).objectData,
+            velocityX: entity.velocity.x,
+            velocityY: entity.velocity.y,
+            velocityZ: entity.velocity.z,
+          },
+        ]);
+        if (entity.entityType === 71 && entity.metadata) { // Special fix for item frames
+          packets.push(['entity_metadata', {
+            entityId: entity.id,
+            metadata: getMetaArrayForEntity(entity)
+          }])
+        }
+        break;
+
+      default:
+        //TODO add more?
+        break;
+    }
+    if ((entity as any).rawMetadata?.length > 0)
+      packets.push([
+        'entity_metadata',
+        {
+          entityId: entity.id,
+          metadata: (entity as any).rawMetadata,
+        },
+      ]);
+    return packets;
+  }, [])
 }
 
 type NbtPositionTag = { type: 'int'; value: number };
