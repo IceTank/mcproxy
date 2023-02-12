@@ -33,10 +33,14 @@ export const difficulty: Record<string, number> = {
 };
 
 export function packetAbilities(bot: Bot): PacketTuple {
+  let flags = 0b0
+  if (bot.physicsEnabled) flags |= 0b10 // Flying
+  if ([1, 3].includes(bot.player.gamemode)) flags |= 0b100 // Can fly
+  if (bot.player.gamemode === 1) flags |= 0b1000 // Instant break
   return {
     name: 'abilities',
     data: {
-      flags: (bot.physicsEnabled ? 0b0 : 0b10) | ([1, 3].includes(bot.player.gamemode) ? 0b0 : 0b100) | (bot.player.gamemode !== 1 ? 0b0 : 0b1000),
+      flags,
       flyingSpeed: 0.05,
       walkingSpeed: 0.1,
     },
@@ -83,9 +87,7 @@ export function generatePackets(stateData: StateData, pclient?: Client, offset?:
     [
       'abilities',
       {
-        flags: (bot.physicsEnabled ? 0b0 : 0b10) | ([1, 3].includes(bot.player.gamemode) ? 0b0 : 0b100) | (bot.player.gamemode !== 1 ? 0b0 : 0b1000),
-        flyingSpeed: 0.05,
-        walkingSpeed: 0.1,
+        ...packetAbilities(bot)
       },
     ],
     ['held_item_slot', { slot: bot.quickBarSlot ?? 1 }],
