@@ -1,5 +1,5 @@
 {
-  "name": "@rob9315/mcproxy",
+  "name": "@icetank/mcproxy",
   "version": "1.0.0",
   "description": "a minecraft proxy library powered by mineflayer",
   "keywords": [
@@ -10,10 +10,14 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/rob9315/mcproxy.git"
+    "url": "git+https://github.com/IceTank/mcproxy.git"
   },
   "license": "GPL-3.0",
   "author": "rob9315",
+  "contributors": [{
+    "name": "IceTank",
+    "url": "https://github.com/IceTank"
+  }],
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "scripts": {
@@ -22,7 +26,6 @@
     "postinstall": "npm run build",
     "fix": "standard-markdown --fix"
   },
-  "prettier": "@rob9315/prettier-config",
   "dependencies": {
     "minecraft-data": "^3.0.0",
     "minecraft-protocol": "^1.32.0",
@@ -31,9 +34,16 @@
     "smart-buffer": "^4.2.0"
   },
   "devDependencies": {
-    "@rob9315/prettier-config": "latest",
     "@types/node": "^16.6.2",
     "standard-markdown": "^7.1.0",
     "typescript": "^4.3.5"
+  },
+  "bugs": {
+    "url": "https://github.com/icetank/mcproxy/issues"
+  },
+  "homepage": "https://github.com/icetank/mcproxy#readme",
+  "directories": {
+    "example": "examples",
+    "lib": "lib"
   }
 }
