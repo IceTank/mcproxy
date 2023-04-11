@@ -386,7 +386,7 @@ export class Conn {
    * @param pClient Client to link
    * @param options Extra options like extra middleware to be used for the client.
    */
-  link(pClient: Client, options?: { toClientMiddleware?: PacketMiddleware[] }) {
+  link(pClient: Client, options?: { toClientMiddleware?: PacketMiddleware[], toServerMiddleware?: PacketMiddleware[] }) {
     if (this.pclient) this.unlink(); // Does this even matter? Maybe just keep it for future use when unlink does more.
     this.pclient = pClient;
     this.stateData.bot.physicsEnabled = false;
