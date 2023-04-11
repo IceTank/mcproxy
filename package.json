@@ -14,14 +14,16 @@
   },
   "license": "GPL-3.0",
   "author": "rob9315",
-  "contributors": [{
-    "name": "IceTank",
-    "url": "https://github.com/IceTank"
-  }],
+  "contributors": [
+    {
+      "name": "IceTank",
+      "url": "https://github.com/IceTank"
+    }
+  ],
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "scripts": {
-    "build": "npx tsc",
+    "build": "tsc",
     "prepublish": "npm run build",
     "postinstall": "npm run build",
     "fix": "standard-markdown --fix"
