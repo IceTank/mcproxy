@@ -1,8 +1,8 @@
 [![Release][release-shield]][release-link] [![Continuous Integration][ci-shield]][ci-link] [![Latest][semver-shield]][semver-link] [![Beta][beta-shield]][beta-link]
 
-# mcproxy [WIP]
+# mcproxy
 
-a minecraft proxy library powered by mineflayer that replicates data as well as possible from available information of mineflayer
+a minecraft proxy library powered by mineflayer that replicates data as well as possible from available information of mineflayer. Forked version of [mcproxy](https://github.com/rob9315/mcproxy).
 
 # Contribution
 
@@ -13,11 +13,11 @@ This project was inspired by [2bored2wait](https://github.com/themoonisacheese/2
 To add this to your project, just install it with your favourite package manager.
 
 ```sh
-npm install @rob9315/mcproxy
+npm install @icetank/mcproxy
 # or
-yarn add @rob9315/mcproxy
+yarn add @icetank/mcproxy
 # or
-pnpm add @rob9315/mcproxy
+pnpm add @icetank/mcproxy
 ```
 
 It is recommended to use yarn for this project. Altho other package managers should work too.
@@ -28,7 +28,7 @@ This project provides the `Conn` class, which enables you to create a connection
 
 ```ts
 // How to instanciate Conn:
-import { Conn } from '@rob9315/mcproxy';
+import { Conn } from '@icetank/mcproxy';
 const conn = new Conn(botOptions: mineflayer.BotOptions, options: ConnOptions);
 ```
 
@@ -101,7 +101,7 @@ State Keeping class to extend prismarine-worlds missing state keeping informatio
 The internal method used to generate packets from a bot and an optional pclient. If a pclient is provided some aspects of the packets are changed such as the uuid and some version specific changes might be done for compatibility (though not all versions are supported \[yet])
 
 ```ts
-import { generatePackets } from '@rob9315/mcproxy';
+import { generatePackets } from '@icetank/mcproxy';
 let packets: Packet[] = generatePackets(bot, pclient?: Client);
 packets.forEach((packet)=>pclient.write(...packet));
 ```
@@ -192,13 +192,6 @@ Disconnects from the server and detaches all pclients
 
 <!-- markdown links -->
 
-[release-shield]: https://img.shields.io/github/workflow/status/rob9315/mcproxy/Release?label=Release&style=for-the-badge
-[release-link]: https://github.com/rob9315/mcproxy/actions/workflows/release.yml
-[ci-shield]: https://img.shields.io/github/workflow/status/rob9315/mcproxy/Continuous%20Integration?label=master&style=for-the-badge
-[ci-link]: https://github.com/rob9315/mcproxy/actions/workflows/ci.yml
 [npm-shield]: https://img.shields.io/github/package-json/v/rob9315/mcproxy?label=npm&style=for-the-badge
-[npm-link]: https://www.npmjs.com/package/@rob9315/mcproxy
-[beta-shield]: https://img.shields.io/github/v/tag/rob9315/mcproxy?include_prereleases&label=beta&sort=semver&style=for-the-badge
-[beta-link]: https://www.npmjs.com/package/@rob9315/mcproxy/v/beta
-[semver-shield]: https://img.shields.io/github/v/tag/rob9315/mcproxy?include_releases&label=latest&sort=semver&style=for-the-badge
-[semver-link]: https://www.npmjs.com/package/@rob9315/mcproxy
+[npm-link]: https://www.npmjs.com/package/@icetank/mcproxy
+[semver-link]: https://www.npmjs.com/package/@icetank/mcproxy
