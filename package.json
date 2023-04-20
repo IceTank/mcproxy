@@ -23,7 +23,7 @@
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "scripts": {
-    "build": "tsc",
+    "build": "npx tsc",
     "prepublish": "npm run build",
     "postinstall": "npm run build",
     "fix": "standard-markdown --fix"
