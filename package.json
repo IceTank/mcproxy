@@ -1,6 +1,6 @@
 {
   "name": "@icetank/mcproxy",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "a minecraft proxy library powered by mineflayer",
   "keywords": [
     "minecraft",
@@ -25,7 +25,6 @@
   "scripts": {
     "build": "npx tsc",
     "prepublish": "npm run build",
-    "postinstall": "npm run build",
     "fix": "standard-markdown --fix"
   },
   "dependencies": {

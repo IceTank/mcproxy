@@ -2,7 +2,7 @@ import { PacketMeta } from "minecraft-protocol";
 import { Bot } from "mineflayer";
 import { Vec3 } from 'vec3'
 import { Packet } from "./conn";
-import { chunkColumnToPacketsWithOffset } from "./packets";
+import { BlockEntityNbt, chunkColumnToPacketsWithOffset } from "./packets";
 
 const Chunk = require('prismarine-chunk')('1.12.2')
 
@@ -77,6 +77,34 @@ export abstract class IPositionTransformer {
   abstract onSToCPacket(name: string, data: any): Packet[] | false
 }
 
+export function offsetTileEntityData(originalLocation: Vec3, nbtData: BlockEntityNbt, offset: Vec3) {
+  const originalPosition = new Vec3(originalLocation.x, originalLocation.y, originalLocation.z)
+  const offsetPosition = originalPosition.minus(offset)
+  const nbtDataNew: BlockEntityNbt = {
+    type: 'compound',
+    name: "",
+    value: {
+      ...nbtData.value,
+      x: { type: 'int', value: offsetPosition.x },
+      y: { type: 'int', value: offsetPosition.y },
+      z: { type: 'int', value: offsetPosition.z },
+    }
+  }
+  return {
+    ...nbtData,
+    ...nbtDataNew,
+  }
+}
+
+export function offsetTileEntityPacket(data: any, offset: Vec3): Packet[] {
+  const originalPosition = new Vec3(data.location.x, data.location.y, data.location.z)
+  return [['tile_entity_data', {
+    ...data,
+    location: originalPosition.minus(offset),
+    nbtData: offsetTileEntityData(originalPosition, data.nbtData, offset) 
+  }]] as Packet[]
+}
+
 export class SimplePositionTransformer implements IPositionTransformer {
   offset: Vec3
   sToC: Transformer
@@ -116,6 +144,9 @@ export class SimplePositionTransformer implements IPositionTransformer {
   }
 
   onSToCPacket(name: string, data: any): Packet[] | false {
+    if (name === 'tile_entity_data') {
+      return offsetTileEntityPacket(data, this.sToC.offsetVec)
+    }
     if ('location' in data) {
       const transformed = {
         ...data,
