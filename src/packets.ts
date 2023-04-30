@@ -2,8 +2,17 @@ import type { Bot } from 'mineflayer';
 import type { Client, Packet } from './conn';
 import { SmartBuffer } from 'smart-buffer';
 import { Vec3 } from 'vec3';
+import { StateData } from './stateData';
+import { Entity } from 'prismarine-entity'
+import { offsetTileEntityData, offsetTileEntityPacket } from './positionTransformer';
 
 const MAX_CHUNK_DATA_LENGTH = 31598;
+const shulkerIds = [
+  219, 220, 221, 222,
+  223, 224, 225, 226,
+  227, 228, 229, 230,
+  231, 232, 233, 234
+]
 
 export type PacketTuple = {
   name: string;
@@ -31,10 +40,14 @@ export const difficulty: Record<string, number> = {
 };
 
 export function packetAbilities(bot: Bot): PacketTuple {
+  let flags = 0b0
+  if (bot.physicsEnabled) flags |= 0b10 // Flying
+  if ([1, 3].includes(bot.player.gamemode)) flags |= 0b100 // Can fly
+  if (bot.player.gamemode === 1) flags |= 0b1000 // Instant break
   return {
     name: 'abilities',
     data: {
-      flags: (bot.physicsEnabled ? 0b0 : 0b10) | ([1, 3].includes(bot.player.gamemode) ? 0b0 : 0b100) | (bot.player.gamemode !== 1 ? 0b0 : 0b1000),
+      flags,
       flyingSpeed: 0.05,
       walkingSpeed: 0.1,
     },
@@ -47,13 +60,13 @@ export function sendTo(pclient: Client, ...args: PacketTuple[]) {
   }
 }
 
-export function getLoginSequencePackets(bot: Bot & { recipes: number[] }, pclient?: Client): Packet[] {
+export function generatePackets(stateData: StateData, pclient?: Client, offset?: { offsetBlock: Vec3, offsetChunk: Vec3 }): Packet[] {
+  const bot = stateData.bot;
   //* if not spawned yet, return nothing
   if (!bot.entity) return [];
 
   //* load up some helper methods
-  const { toNotch: itemToNotch }: typeof import('prismarine-item').Item = require('prismarine-item')(pclient?.protocolVersion ?? bot.version);
-  const Vec3: typeof import('vec3').default = require('vec3');
+  const { toNotch: itemToNotch }: typeof import('prismarine-item').Item = require('prismarine-item')(pclient?.version ?? bot.version);
   const UUID = bot.player.uuid; //pclient?.uuid ??
 
   return [
@@ -81,9 +94,7 @@ export function getLoginSequencePackets(bot: Bot & { recipes: number[] }, pclien
     [
       'abilities',
       {
-        flags: (bot.physicsEnabled ? 0b0 : 0b10) | ([1, 3].includes(bot.player.gamemode) ? 0b0 : 0b100) | (bot.player.gamemode !== 1 ? 0b0 : 0b1000),
-        flyingSpeed: 0.05,
-        walkingSpeed: 0.1,
+        ...packetAbilities(bot)
       },
     ],
     ['held_item_slot', { slot: bot.quickBarSlot ?? 1 }],
@@ -186,110 +197,154 @@ export function getLoginSequencePackets(bot: Bot & { recipes: number[] }, pclien
       }
       return packets;
     }, []),
-    ...(bot.world.getColumns() as any[]).reduce<Packet[]>((packets, chunk) => [...packets, ...chunkColumnToPackets(bot, chunk)], []),
+    ...(bot.world.getColumns() as any[]).reduce<Packet[]>((packets, chunk) => [...packets, ...chunkColumnToPacketsWithOffset(chunk, undefined, undefined, undefined, offset)], []),
     //? `world_border` (as of 1.12.2) => really needed?
     //! block entities moved to chunk packet area
-    ...Object.values(bot.entities).reduce<Packet[]>((packets, entity) => {
-      switch (entity.type) {
-        case 'orb':
-          packets.push([
-            'spawn_entity_experience_orb',
-            {
-              ...entity.position,
-              entityId: entity.id,
-              count: entity.count,
-            },
-          ]);
-          break;
-
-        case 'mob':
-          packets.push(
-            [
-              'spawn_entity_living',
-              {
-                ...entity.position,
-                entityId: entity.id,
-                entityUUID: (entity as any).uuid,
-                type: entity.entityType,
-                yaw: entity.yaw,
-                pitch: entity.pitch,
-                headPitch: (entity as any).headPitch,
-                velocityX: entity.velocity.x,
-                velocityY: entity.velocity.y,
-                velocityZ: entity.velocity.z,
-                metadata: (entity as any).rawMetadata,
-              },
-            ],
-            ...entity.equipment.reduce((arr, item, slot) => {
-              if (item)
-                arr.push([
-                  'entity_equipment',
-                  {
-                    entityId: entity.id,
-                    slot,
-                    item: itemToNotch(item),
-                  },
-                ]);
-              return arr;
-            }, [] as Packet[])
-          );
-          break;
-
-        case 'object':
-          packets.push([
-            'spawn_entity',
-            {
-              ...entity.position,
-              entityId: entity.id,
-              objectUUID: (entity as any).uuid,
-              type: entity.entityType,
-              yaw: entity.yaw,
-              pitch: entity.pitch,
-              objectData: (entity as any).objectData,
-              velocityX: entity.velocity.x,
-              velocityY: entity.velocity.y,
-              velocityZ: entity.velocity.z,
-            },
-          ]);
-          break;
-
-        default:
-          //TODO add more?
-          break;
-      }
-      if ((entity as any).rawMetadata?.length > 0)
-        packets.push([
-          'entity_metadata',
-          {
-            entityId: entity.id,
-            metadata: (entity as any).rawMetadata,
-          },
-        ]);
-      return packets;
-    }, []),
+    ...spawnEntities(bot, itemToNotch),
     ...(bot.isRaining ? [['game_state_change', { reason: 1, gameMode: 0 }]] : []),
     ...((bot as any).rainState !== 0 ? [['game_state_change', { reason: 7, gameMode: (bot as any).rainState }]] : []),
     ...((bot as any).thunderState !== 0 ? [['game_state_change', { reason: 8, gameMode: (bot as any).thunderState }]] : []),
   ] as Packet[];
 }
 
+function getMetaArrayForEntity(entity: Entity) {
+  const meta = entity.metadata
+  const compArr = []
+    for (let i = 0; i < meta.length; i++) {
+      const data = meta[i]
+      switch (i) {
+        case 0: // On fire crouching etc
+          compArr.push({key: i, type: 0, value: data ? data : 0})
+          break
+        case 1: // Air time
+          compArr.push({ key: i, type: 1, value: data ? data : 300 })
+          break
+        case 2: // Custom name
+          compArr.push({ key: i, type: 3, value: data ? data : "" })
+          break
+        case 3: // Custom name visible
+          compArr.push({ key: i, type: 6, value: data ? data : false })
+          break
+        case 4: // Is silent
+          compArr.push({ key: i, type: 6, value: data ? data : false })
+          break
+        case 5: // Has no gravity
+          compArr.push({ key: i, type: 6, value: data ? data : false })
+          break
+        case 6: // Item in item frame?
+          compArr.push({ key: i, type: 5, value: data })
+      }
+    }
+    return compArr
+}
+
+function toYawWeird(num: number) {
+  return -(Math.floor(((num / Math.PI) * 128 + 255) % 256) - 127)
+}
+
+function spawnEntities(bot: Bot, itemToNotch: typeof import('prismarine-item').Item.toNotch) {
+  return Object.values(bot.entities).reduce<Packet[]>((packets, entity) => {
+    switch (entity.type) {
+      case 'orb':
+        packets.push([
+          'spawn_entity_experience_orb',
+          {
+            ...entity.position,
+            entityId: entity.id,
+            count: entity.count,
+          },
+        ]);
+        break;
+
+      case 'mob':
+        packets.push(
+          [
+            'spawn_entity_living',
+            {
+              ...entity.position,
+              entityId: entity.id,
+              entityUUID: (entity as any).uuid,
+              type: entity.entityType,
+              yaw: toYawWeird(entity.yaw),
+              pitch: entity.pitch,
+              headPitch: (entity as any).headPitch,
+              velocityX: entity.velocity.x,
+              velocityY: entity.velocity.y,
+              velocityZ: entity.velocity.z,
+              metadata: (entity as any).rawMetadata,
+            },
+          ],
+          ...entity.equipment.reduce((arr, item, slot) => {
+            if (item)
+              arr.push([
+                'entity_equipment',
+                {
+                  entityId: entity.id,
+                  slot,
+                  item: itemToNotch(item),
+                },
+              ]);
+            return arr;
+          }, [] as Packet[])
+        );
+        break;
+
+      case 'object':
+        packets.push([
+          'spawn_entity',
+          {
+            ...entity.position,
+            entityId: entity.id,
+            objectUUID: (entity as any).uuid,
+            type: entity.entityType,
+            yaw: toYawWeird(entity.yaw),
+            pitch: entity.pitch,
+            objectData: (entity as any).objectData,
+            velocityX: entity.velocity.x,
+            velocityY: entity.velocity.y,
+            velocityZ: entity.velocity.z,
+          },
+        ]);
+        if (entity.entityType === 71 && entity.metadata) { // Special fix for item frames
+          packets.push(['entity_metadata', {
+            entityId: entity.id,
+            metadata: getMetaArrayForEntity(entity)
+          }])
+        }
+        break;
+
+      default:
+        //TODO add more?
+        break;
+    }
+    if ((entity as any).rawMetadata?.length > 0)
+      packets.push([
+        'entity_metadata',
+        {
+          entityId: entity.id,
+          metadata: (entity as any).rawMetadata,
+        },
+      ]);
+    return packets;
+  }, [])
+}
+
 type NbtPositionTag = { type: 'int'; value: number };
-type BlockEntity = { x: NbtPositionTag; y: NbtPositionTag; z: NbtPositionTag; id: object };
-type ChunkEntity = { name: string; type: string; value: BlockEntity };
+export type BlockEntityNbt = { type: "compound", name: "", value: { x: NbtPositionTag; y: NbtPositionTag; z: NbtPositionTag; id: { type: "string", value: string } } };
+export type TileEntityPacket = { location: { x: number, y: number, z: number }, action: number, nbtData: BlockEntityNbt }
 //* splits a single chunk column into multiple packets if needed
-function chunkColumnToPackets(
-  bot: Bot,
+export function chunkColumnToPacketsWithOffset(
   { chunkX: x, chunkZ: z, column }: { chunkX: number; chunkZ: number; column: any },
   lastBitMask?: number,
-  chunkData: SmartBuffer = new SmartBuffer(),
-  chunkEntities: ChunkEntity[] = []
+  chunkDataArg?: SmartBuffer,
+  chunkEntities: BlockEntityNbt[] = [],
+  offset?: { offsetBlock: Vec3, offsetChunk: Vec3 }
 ): Packet[] {
   let bitMask = !!lastBitMask ? column.getMask() ^ (column.getMask() & ((lastBitMask << 1) - 1)) : column.getMask();
   let bitMap = lastBitMask ?? 0b0;
   let newChunkData = new SmartBuffer();
-
-  // blockEntities
-  // chunkEntities.push(...Object.values(column.blockEntities as Map<string, ChunkEntity>));
+  const realOffset = offset ?? { offsetBlock: new Vec3(0, 0, 0), offsetChunk: new Vec3(0, 0, 0) }
+  let chunkData = chunkDataArg ?? new SmartBuffer()
 
   // checks with bitmask if there is a chunk in memory that (a) exists and (b) was not sent to the client yet
   for (let i = 0; i < 16; i++)
@@ -299,9 +354,20 @@ function chunkColumnToPackets(
       if (chunkData.length + newChunkData.length > MAX_CHUNK_DATA_LENGTH) {
         if (!lastBitMask) column.biomes?.forEach((biome: number) => chunkData.writeUInt8(biome));
         return [
-          ['map_chunk', { x, z, bitMap, chunkData: chunkData.toBuffer(), groundUp: !lastBitMask, blockEntities: [] }],
-          ...chunkColumnToPackets(bot, { chunkX: x, chunkZ: z, column }, 0b1 << i, newChunkData),
-          ...getChunkEntityPackets(bot, column.blockEntities),
+          ['map_chunk', { 
+            x: x - realOffset.offsetChunk.x, 
+            z: z - realOffset.offsetChunk.z, 
+            bitMap, 
+            chunkData: chunkData.toBuffer(), 
+            groundUp: !lastBitMask, 
+            blockEntities: chunkDataArg ? [] : Object.entries(column.blockEntities).map((data) => {
+              const nbtData: BlockEntityNbt = data[1] as unknown as BlockEntityNbt
+              const originalLocation = new Vec3(nbtData.value.x.value, nbtData.value.y.value, nbtData.value.z.value)
+              return offsetTileEntityData(originalLocation, nbtData, realOffset.offsetBlock)
+            })
+          }],
+          ...chunkColumnToPacketsWithOffset({ chunkX: x, chunkZ: z, column }, 0b1 << i, newChunkData, undefined, offset),
+          // ...getChunkEntityPacketsWithOffset(column, column.blockEntities, offset),
         ];
       }
       bitMap ^= 0b1 << i;
@@ -309,23 +375,87 @@ function chunkColumnToPackets(
       newChunkData.clear();
     }
   if (!lastBitMask) column.biomes?.forEach((biome: number) => chunkData.writeUInt8(biome));
-  return [['map_chunk', { x, z, bitMap, chunkData: chunkData.toBuffer(), groundUp: !lastBitMask, blockEntities: [] }], ...getChunkEntityPackets(bot, column.blockEntities)];
+  return [['map_chunk', { 
+    x: x - realOffset.offsetChunk.x, z: z - realOffset.offsetChunk.z, 
+    bitMap, chunkData: chunkData.toBuffer(), groundUp: !lastBitMask, 
+    blockEntities: chunkDataArg ? [] : Object.entries(column.blockEntities).map((data) => {
+      const nbtData: BlockEntityNbt = data[1] as unknown as BlockEntityNbt
+      const originalLocation = new Vec3(nbtData.value.x.value, nbtData.value.y.value, nbtData.value.z.value)
+      return offsetTileEntityData(originalLocation, nbtData, realOffset.offsetBlock)
+    })
+  }], /** ...getChunkEntityPacketsWithOffset(column, column.blockEntities, offset) */];
 }
 
-function getChunkEntityPackets(bot: Bot, blockEntities: { [pos: string]: ChunkEntity }) {
+function getChunkEntityPacketsWithOffset(column: any, blockEntities: { [pos: string]: BlockEntityNbt }, offset?: { offsetBlock: Vec3, offsetChunk: Vec3 }) {
+  offset = offset ?? { offsetBlock: new Vec3(0, 0, 0), offsetChunk: new Vec3(0, 0, 0)}
   const packets: Packet[] = [];
+  if (Object.values(blockEntities).length) console.info('Block entities: ', Object.values(blockEntities).map(b => b.value.id.value))
   for (const nbtData of Object.values(blockEntities)) {
-    const {
-      x: { value: x },
-      y: { value: y },
-      z: { value: z },
-    } = nbtData.value;
-    const location = { x, y, z };
-    packets.push(['tile_entity_data', { location, nbtData }]);
-    const block = bot.blockAt(new Vec3(x, y, z));
-    if (block?.name == 'minecraft:chest') {
+    const locationOriginal = new Vec3(nbtData.value.x.value, nbtData.value.y.value, nbtData.value.z.value)
+    const location = locationOriginal.minus(offset.offsetBlock)
+    location.y = locationOriginal.y
+
+    const block = column.getBlock(posInChunk(location));
+    let action: number | null = null
+    if (block.type === 138) { // Beacon
+      action = 3
+    } else if (block.type === 144) { // Skull
+      action = 4
+    } else if (block.type === 140) { // Flower pot
+      action = 5
+    } else if (block.type === 176 || block.type === 177) { // Wall and standing banner
+      action = 6
+    } else if (block.type === 209) { // End gateway
+      action = 8
+    } else if (block.type === 63 || block.type === 68) { // Sign
+      action = 9
+    } else if (shulkerIds.includes(block.type)) {
+      action = 10
+    } else if (block.type === 26) { // Bed
+      action = 11
+    }
+
+    if (action !== null) {
+      const foo = ['tile_entity_data', {
+        location,
+        action: action,
+        nbtData: offsetTileEntityData(locationOriginal, nbtData, offset.offsetBlock)
+      }] as Packet
+      // console.info('Tile entity packet', foo)
+      packets.push(foo)
+    } else if (block.type == 54 || block.type === 146) {
+      console.info('Chest nbt', nbtData)
       packets.push(['block_action', { location, byte1: 1, byte2: 0, blockId: block.type }]);
     }
   }
   return packets;
+}
+
+/**
+ * Tile_entity_data action:
+
+1: Set data of a mob spawner (everything except for SpawnPotentials: current delay, min/max delay, mob to be spawned, spawn count, spawn range, etc.)
+2: Set command block text (command and last execution status)
+3: Set the level, primary, and secondary powers of a beacon
+4: Set rotation and skin of mob head
+5: Set type of flower in flower pot
+6: Set base color and patterns on a banner
+7: Set the data for a Structure tile entity (??? what is that?)
+8: Set the destination for a end gateway
+9: Set the text on a sign
+10: Declare a shulker box, no data appears to be sent and the client seems to do fine without this packet. Perhaps it is a leftover from earlier versions?
+11: Set the color of a bed
+
+ */
+
+export function chunkColumnToPackets(bot: Bot,
+    { chunkX, chunkZ, column }: { chunkX: number; chunkZ: number; column: any },
+    lastBitMask?: number,
+    chunkData: SmartBuffer = new SmartBuffer(),
+    chunkEntities: BlockEntityNbt[] = []) {
+  return chunkColumnToPacketsWithOffset({ chunkX, chunkZ, column }, lastBitMask, chunkData, chunkEntities)
+}
+
+function posInChunk (pos: Vec3) {
+  return new Vec3(Math.floor(pos.x) & 15, Math.floor(pos.y), Math.floor(pos.z) & 15)
 }
