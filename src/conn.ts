@@ -158,7 +158,7 @@ export class Conn {
       if (isCanceled) continue;
       if (meta.name === 'custom_payload') {
         // Workaround for broken custom_payload packets
-        this.writeRaw(buffer);
+        pclient.writeRaw(buffer);
         return;
       }
       if (!wasChanged && this.optimizePacketWrite) {
