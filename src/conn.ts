@@ -1,4 +1,4 @@
-Error.stackTraceLimit = 30
+
 import { Bot, BotOptions, createBot } from 'mineflayer';
 import { Client as mcpClient, PacketMeta } from 'minecraft-protocol';
 import { createClient } from 'minecraft-protocol';
@@ -6,7 +6,6 @@ import { states } from 'minecraft-protocol';
 import { generatePackets } from './packets';
 import { StateData } from './stateData';
 import { IPositionTransformer, SimplePositionTransformer } from './positionTransformer';
-const bufferEqual = require('buffer-equal');
 import { Vec3 } from 'vec3'
 
 export type Packet = [name: string, data: any];
@@ -115,7 +114,7 @@ export class Conn {
    */
   async onServerRaw(buffer: Buffer, meta: PacketMeta) {
     if (meta.state !== 'play') return;
-
+    
     let _packetData: any | undefined = undefined;
     const getPacketData = () => {
       if (!_packetData) {
@@ -309,6 +308,7 @@ export class Conn {
    * @param pclient
    */
   sendPackets(pclient: Client) {
+
     this.generatePackets(pclient).filter(p => !!p[1]).forEach((packet) => pclient.write(...packet));
   }
 
@@ -335,7 +335,9 @@ export class Conn {
       }
       return packets
     } else {
-      return generatePackets(this.stateData, pclient)
+      const data = generatePackets(this.stateData, pclient);
+      // console.log(data[1])
+      return data;
     }
   }
 

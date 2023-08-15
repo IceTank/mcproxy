@@ -4,9 +4,14 @@ export class StateData {
   recipes: number[] = [];
   flying: boolean = false;
   bot: Bot;
+  rawLoginPacket: any;
+  rawCommandPacket: any;
 
   constructor(bot: Bot) {
     this.bot = bot;
+
+    this.bot._client.on('login', (packet) => {this.rawLoginPacket = packet})
+    this.bot._client.on('declare_commands', (packet)=> {this.rawCommandPacket = packet})
   }
 
   onCToSPacket(name: string, data: any) {

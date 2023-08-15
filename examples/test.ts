@@ -1,12 +1,12 @@
 // import mcproxy, replace ".."
 // with "@rob9315/mcproxy" in your project
-const mcproxy = require('..');
+import * as mcproxy from '../src';
 const minecraft_protocol = require('minecraft-protocol');
 
 // initialize bot instance like you would with mineflayer
 // https://github.com/PrismarineJS/mineflayer
 let conn = new mcproxy.Conn({
-  username: 'proxyBot',
+  username: 'Generel_Schwerz',
   version: '1.20.1',
   host: 'localhost',
   port: 25565,
@@ -17,10 +17,10 @@ let conn = new mcproxy.Conn({
 conn.stateData.bot.on('spawn', async () => {
   console.log('spawn');
 });
-conn.stateData.bot.on('error', (err) => {
+conn.stateData.bot.on('error', (err: any) => {
   console.error(err);
 });
-conn.stateData.bot.on('end', (reason) => {
+conn.stateData.bot.on('end', (reason: any) => {
   console.error(reason);
   process.exit(1);
 });
@@ -38,9 +38,10 @@ server.on('listening', () => {
   console.info('Listening on', 25566);
 });
 
+conn.stateData.bot._client.on('login', console.log)
 // accept client connections on your server,
 // make sure not to use "connection" instead of "login"
-server.on('login', async (client) => {
+server.on('login', async (client: any) => {
   // send packets recreating the current game state to the client
   conn.sendPackets(client);
 
