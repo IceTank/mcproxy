@@ -1,8 +1,8 @@
 Error.stackTraceLimit = 30;
-import type { Bot } from "mineflayer";
+import type { Bot, Player } from "mineflayer";
 import type { Client, Packet } from "./conn";
 import { SmartBuffer } from "smart-buffer";
-import { Vec3 } from "vec3";
+import vec3Builder, { Vec3 } from "vec3";
 import { StateData } from "./stateData";
 import { Entity } from "prismarine-entity";
 import deepcopy from "deepcopy";
@@ -43,18 +43,18 @@ export const difficulty: Record<string, number> = {
   hard: 3,
 };
 
-export function packetAbilities(bot: Bot): PacketTuple {
+export function packetAbilities(bot: Bot): any {
   let flags = 0b0;
-  if (bot.physicsEnabled) flags |= 0b10; // Flying
+  if (bot.physicsEnabled && !bot.entity.onGround) flags |= 0b10; // Flying right now
   if ([1, 3].includes(bot.player.gamemode)) flags |= 0b100; // Can fly
   if (bot.player.gamemode === 1) flags |= 0b1000; // Instant break
   return {
-    name: "abilities",
-    data: {
-      flags,
-      flyingSpeed: 0.05,
-      walkingSpeed: 0.1,
-    },
+    // name: "abilities",
+    // data: {
+    flags,
+    flyingSpeed: 0.05,
+    walkingSpeed: 0.1,
+    // },
   };
 }
 
@@ -77,6 +77,7 @@ export function generatePackets(
   const { toNotch: itemToNotch }: typeof import("prismarine-item").Item = require("prismarine-item")(
     pclient?.version ?? bot.version
   );
+
   const UUID = bot.player.uuid; //pclient?.uuid ??
 
   return [
@@ -107,7 +108,7 @@ export function generatePackets(
 
     // unneeded to spawn
     // needed to get commands from server.
-    // ["declare_commands", stateData.rawCommandPacket],
+    ["declare_commands", stateData.rawCommandPacket],
 
     // unneeded to spawn
     // unlock recipes
@@ -120,6 +121,8 @@ export function generatePackets(
         ...bot.entity.position,
         yaw: 180 - (bot.entity.yaw * 180) / Math.PI,
         pitch: -(bot.entity.pitch * 180) / Math.PI,
+        flags: 0,
+        teleportId: 1,
       },
     ],
 
@@ -137,52 +140,40 @@ export function generatePackets(
     // unneeded to spawn
     // fills in tablist and other info
     // Spawns in named entities and players.
-    ...Object.values(bot.players).reduce<Packet[]>((packets, { uuid, username, gamemode, ping, entity }) => {
-      if (uuid !== UUID) {
-        packets.push([
-          //   "player_info",
-          //   {
-          //     action: 63,
-          //     data: [{ uuid, player: { name: username, properties: [] }, gamemode, latency: ping, listed: true}],
-          //   },
-          "player_info",
-          {
-            action: 0,
-            data: [{ UUID: uuid, name: username, properties: [], gamemode, ping, displayName: undefined }],
-          },
-        ]);
-        if (entity) {
-          packets.push([
-            "named_entity_spawn",
-            {
-              ...entity.position,
-              entityId: entity.id,
-              playerUUID: uuid,
-              yaw: entityYawToIntPacket(entity.yaw),
-              pitch: entityPitchToIntPacket(entity.pitch),
-              metadata: (entity as any).rawMetadata,
-            },
-          ]);
-          if ((entity as any).headYaw)
-            packets.push([
-              "entity_head_rotation",
-              {
-                entityId: entity.id,
-                headYaw: entityYawToIntPacket((entity as any).headYaw),
-              },
-            ]);
-        }
-      }
-      return packets;
-    }, []),
+    ...convertPlayers(bot.players, UUID),
 
     // unneeded to spawn
     // set time to remote bot's
+    // 1.12.2 requires not bigInt, 1.20 does.
     ["update_time", { age: Number(bot.time.bigAge), time: Number(bot.time.bigTime) }],
 
     // unneeded to spawn
     // set view pos to chunk we're spawning in
     ["update_view_position", { chunkX: bot.entity.position.x >> 4, chunkZ: bot.entity.position.z >> 4 }],
+
+    // ["map_chunk", bot.world.getColumns().map((c: any) => convertPackets(c))],
+    ...convertWorld(bot.world),
+
+    // unneeded for spawn
+    // set items to remote bot's
+    [
+      "window_items",
+      {
+        windowId: 0,
+        statId: 1,
+        items: bot.inventory.slots.map((item: any) => itemToNotch(item)),
+        carriedItem: { present: false },
+      },
+    ],
+
+      //? `world_border` (as of 1.12.2) => really needed?
+    ...spawnEntities(bot, itemToNotch),
+
+
+    // ...(bot.isRaining ? [['game_state_change', { reason: 1, gameMode: 0 }]] : []),
+    // ...((bot as any).rainState !== 0 ? [['game_state_change', { reason: 7, gameMode: (bot as any).rainState }]] : []),
+    // ...((bot as any).thunderState !== 0 ? [['game_state_change', { reason: 8, gameMode: (bot as any).thunderState }]] : []),
+
 
     // ! NOTICE !
     // everything afterward is not vanilla, we add to sync.
@@ -197,109 +188,99 @@ export function generatePackets(
     // set health/food to remote bot's
     ["update_health", { health: bot.health, food: bot.food, foodSaturation: bot.foodSaturation }],
 
-    // unneeded for spawn
-    // NOT VANILLA
-    // set items to remote bot's
-    [
-      "window_items",
-      {
-        windowId: 0,
-        statId: 1,
-        items: bot.inventory.slots.map((item: any) => itemToNotch(item)),
-        carriedItem: { present: false },
-      },
-    ],
 
-    // ["map_chunk", bot.world.getColumns().map((c: any) => convertPackets(c))],
-    ...(bot.world.getColumns() as any[]).reduce((packets, c) => [...packets, ["map_chunk", convertPackets(c)]], []),
 
-    // ...(bot.world.getColumns() as any[])[0].reduce<Packet[]>((packets, chunk) => [...packets, convertPackets(chunk)], []),
-    //   // //? `world_border` (as of 1.12.2) => really needed?
-    //   // //! block entities moved to chunk packet area
-    //   // ...spawnEntities(bot, itemToNotch),
-    //   // ...(bot.isRaining ? [['game_state_change', { reason: 1, gameMode: 0 }]] : []),
-    //   // ...((bot as any).rainState !== 0 ? [['game_state_change', { reason: 7, gameMode: (bot as any).rainState }]] : []),
-    //   // ...((bot as any).thunderState !== 0 ? [['game_state_change', { reason: 8, gameMode: (bot as any).thunderState }]] : []),
   ] as Packet[];
 }
 
-function convertPackets(chunk: any) {
-  const data1 = chunk.column.dumpLight();
-  // if (chunk.chunkX == 7 && chunk.chunkZ == 18) {
-  //   fs.writeFileSync(
-  //     "fuck.json",
-  //     JSON.stringify({
-  //       x: Number(chunk.chunkX),
-  //       z: Number(chunk.chunkZ),
-  //       groundUp: true,
-  //       bitMap: 31,
-  //       chunkData: chunk.column.dump(),
-  //       blockEntities: [],
-  //       // skyLightMask: data1.skyLightMask,
-  //       // blockLightMask: data1.blockLightMask,
-  //       // emptySkyLightMask: data1.emptySkyLightMask,
-  //       // emptyBlockLightMask: data1.emptyBlockLightMask,
-  //       // skyLight: data1.skyLight.map((d:any)=>Array.from(d)), // I don't think this is necessary.
-  //       // blockLight: data1.blockLight.map((d:any)=>Array.from(d)), // I don't think this is necessary.
-  //     })
-  //   );
-  // }
-  // const data = chunk.column.toJson();
-
-  // fs.writeFileSync('fuck.json', JSON.stringify({x: chunk.chunkX, z: chunk.chunkZ, column: JSON.parse(chunk.column.toJson()), fuck: chunk.column.dump()}));
-  // fs.writeFileSync('fuck2.json', JSON.stringify({
-  //   x: Number(chunk.chunkX),
-  //   z: Number(chunk.chunkZ),
-  //   chunkData: chunk.column.dump(),
-  //   blockEntities: [],
-  //   skyLightMask: data1.skyLightMask,
-  //   blockLightMask: data1.blockLightMask,
-  //   emptySkyLightMask: data1.emptySkyLightMask,
-  //   emptyBlockLightMask: data1.emptyBlockLightMask,
-  //   skyLight: data1.skyLight.map((d:any)=>Array.from(d)),
-  //   blockLight: data1.blockLight.map((d:any)=>Array.from(d)),
-  // }))
-
-  const ret: Record<string, any> = {
-    x: Number(chunk.chunkX),
-    z: Number(chunk.chunkZ),
-  };
-
-  if (!!data1) {
-    (ret.skyLightMask = data1.skyLightMask),
-      (ret.blockLightMask = data1.blockLightMask),
-      (ret.emptySkyLightMask = data1.emptySkyLightMask),
-      (ret.emptyBlockLightMask = data1.emptyBlockLightMask),
-      (ret.skyLight = data1.skyLight.map((d: any) => Array.from(d))), // I don't think this is necessary.
-      (ret.blockLight = data1.blockLight.map((d: any) => Array.from(d))); // I don't think this is necessary.
-  } else {
-    ret.groundUp = true;
-    ret.bitMap = chunk.column.getMask();
+const convertPlayers = (players: Record<string, Player>, UUID: string): Packet[] => {
+  const packets: Packet[] = [];
+  for (const key in players) {
+    const { uuid, username, gamemode, ping, entity } = players[key];
+    packets.push([
+        "player_info",
+        {
+          action: 63,
+          data: [{ uuid, player: { name: username, properties: [] }, gamemode, latency: ping, listed: true}],
+        },
+      // "player_info",
+      // {
+      //   action: 0,
+      //   data: [{ UUID: uuid, name: username, properties: [], gamemode, ping, displayName: undefined }],
+      // },
+    ]);
+    if (uuid === UUID) continue; // skip this if its us.
+    if (entity) {
+      packets.push([
+        "named_entity_spawn",
+        {
+          ...entity.position,
+          entityId: entity.id,
+          playerUUID: uuid,
+          yaw: entityYawToIntPacket(entity.yaw),
+          pitch: entityPitchToIntPacket(entity.pitch),
+          metadata: (entity as any).rawMetadata,
+        },
+      ]);
+      if ((entity as any).headYaw)
+        packets.push([
+          "entity_head_rotation",
+          {
+            entityId: entity.id,
+            headYaw: entityYawToIntPacket((entity as any).headYaw),
+          },
+        ]);
+    }
   }
 
-  ret.chunkData = chunk.column.dump();
-  if (Object.keys(chunk.column.blockEntities).length)
-  ret.blockEntities = [chunk.column.blockEntities]; //chunk.column.blockEntities;
+  return packets;
+};
 
-  // if (chunk.chunkX == 7 && chunk.chunkZ == 18) {
-  // console.log(ret)
-  // fs.writeFileSync(
-  //   `${chunk.chunkX},${chunk.chunkZ}.json`,
-  //   JSON.stringify(ret)
-  // );
-  // }
+const convertWorld = (world: any): Packet[] => {
+  const packets: Packet[] = [];
+  for (const chunk of world.getColumns()) {
+    const data1 = chunk.column.dumpLight();
+    const ret: Record<string, any> = {
+      x: Number(chunk.chunkX),
+      z: Number(chunk.chunkZ),
+    };
 
-  console.log(ret.blockEntities);
-  return ret;
-  // const chunkData = new SmartBuffer();
-  // return {
-  //   x: chunk.chunkX,
-  //   z: chunk.chunkZ,
-  //   heightMaps: {},
-  //   chunkData: chunkData.toBuffer(),
-  //   blockEntities: chunk.blockEntities ? [] : chunk.blockEntities
-  // }
-}
+    ret.blockEntities = [];
+
+    if (!!data1) {
+      ret.heightmaps = { type: "compound", name: "", value: {} };
+
+      // if (chunk.column.trustEdges)
+      ret.trustEdges = true;
+      ret.skyLightMask = data1.skyLightMask;
+      ret.blockLightMask = data1.blockLightMask;
+      ret.emptySkyLightMask = data1.emptySkyLightMask;
+      ret.emptyBlockLightMask = data1.emptyBlockLightMask;
+      ret.skyLight = data1.skyLight; // I don't think this is necessary.
+      ret.blockLight = data1.blockLight; // I don't think this is necessary.
+
+      if (Object.keys(chunk.column.blockEntities).length) {
+        for (const [key, val] of Object.entries<any>(chunk.column.blockEntities)) {
+          if (val === undefined) continue;
+          if (val.x) ret.blockEntities.push(val);
+          else {
+            let [x, y, z]: any[] = key.split(",");
+            [x, y, z] = [Number(x) & 0xf, Number(y), Number(z) & 0xf]; // https://github.com/PrismarineJS/mineflayer/blob/a16d270ee6d576ae31ddcbe72d6e27e7ec486665/lib/plugins/blocks.js#L300
+            ret.blockEntities.push({ x, y, z, nbtData: val });
+          }
+        }
+      }
+    } else {
+      ret.groundUp = true;
+      ret.bitMap = chunk.column.getMask();
+      ret.blockEntities = Object.values(chunk.column.blockEntities);
+    }
+
+    ret.chunkData = chunk.column.dump();
+    packets.push(["map_chunk", ret]);
+  }
+  return packets;
+};
 
 function getMetaArrayForEntity(entity: Entity) {
   const meta = entity.metadata;
@@ -372,7 +353,8 @@ export function offsetTileEntityPacket(data: any, offset: Vec3): Packet[] {
 }
 
 function spawnEntities(bot: Bot, itemToNotch: typeof import("prismarine-item").Item.toNotch) {
-  return Object.values(bot.entities).reduce<Packet[]>((packets, entity) => {
+  const packets = [];
+  for (const entity of Object.values(bot.entities)) {
     switch (entity.type) {
       case "orb":
         packets.push([
@@ -458,8 +440,8 @@ function spawnEntities(bot: Bot, itemToNotch: typeof import("prismarine-item").I
           metadata: (entity as any).rawMetadata,
         },
       ]);
-    return packets;
-  }, []);
+  }
+  return packets;
 }
 
 type NbtPositionTag = { type: "int"; value: number };

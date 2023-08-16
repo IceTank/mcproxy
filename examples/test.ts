@@ -3,15 +3,21 @@
 import * as mcproxy from '../src';
 const minecraft_protocol = require('minecraft-protocol');
 
+
+const version = '1.19.4'
+const str = 'Generel2.aternos.me'
+const host = str.split(':')[0]
+const port = Number(str.split(':')[1])
+
 // initialize bot instance like you would with mineflayer
 // https://github.com/PrismarineJS/mineflayer
 let conn = new mcproxy.Conn({
   username: 'Generel_Schwerz',
-  // auth: 'microsoft',
-  version: '1.12.2',
-  host: 'Generel2.aternos.me',
-  port:28803,
-  skipValidation: true,
+  auth: 'microsoft',
+  version,
+  host,
+  port,
+  // skipValidation: true,
 });
 
 // do stuff with your bot
@@ -29,7 +35,7 @@ conn.stateData.bot.on('end', (reason: any) => {
 // open a server
 // https://github.com/PrismarineJS/node-minecraft-protocol
 const server = minecraft_protocol.createServer({
-  version: '1.12.2',
+  version,
   host: 'localhost',
   'online-mode': false,
   port: 25566,
