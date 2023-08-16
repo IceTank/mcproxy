@@ -64,14 +64,14 @@ export function sendTo(pclient: Client, ...args: PacketTuple[]) {
   }
 }
 
-export function generatePackets(
+export function* generatePackets(
   stateData: StateData,
   pclient?: Client,
   offset?: { offsetBlock: Vec3; offsetChunk: Vec3 }
-): Packet[] {
+): Generator<Packet, void, void> {
   const bot = stateData.bot;
   //* if not spawned yet, return nothing
-  if (!bot.entity) return [];
+  if (!bot.entity) throw new Error("Entity not spawned yet");
 
   //* load up some helper methods
   const { toNotch: itemToNotch }: typeof import("prismarine-item").Item = require("prismarine-item")(
@@ -80,114 +80,120 @@ export function generatePackets(
 
   const UUID = bot.player.uuid; //pclient?.uuid ??
 
-  return [
-    // store rawLoginPacket since mineflayer does not handle storing data correctly.
-    ["login", stateData.rawLoginPacket],
+  // store rawLoginPacket since mineflayer does not handle storing data correctly.
+  yield ["login", stateData.rawLoginPacket],
+  
+  // unneeded to spawn
+  // hardcoded unlocked difficulty because mineflayer doesn't save.
+  yield ["difficulty", { difficulty: bot.game.difficulty, difficultyLocked: false }];
 
-    // unneeded to spawn
-    // hardcoded unlocked difficulty because mineflayer doesn't save.
-    ["difficulty", { difficulty: bot.game.difficulty, difficultyLocked: false }], //, 
+  // unneeded to spawn
+  // ability generation seems fine
+  yield ["abilities", { ...packetAbilities(bot) }];
 
-    // unneeded to spawn
-    // ability generation seems fine
-    ["abilities", { ...packetAbilities(bot) }],
+  // unneeded to spawn
+  // Updating held item
+  yield ["held_item_slot", { slot: bot.quickBarSlot ?? 1 }];
 
-    // unneeded to spawn
-    // Updating held item
-    ["held_item_slot", { slot: bot.quickBarSlot ?? 1 }],
+  // unneeded to spawn
+  // declare recipes (requires prismarine-registry)
 
-    // unneeded to spawn
-    // declare recipes (requires prismarine-registry)
+  // unneeded to spawn
+  // load "tags", whatever that is
 
-    // unneeded to spawn
-    // load "tags", whatever that is
+  // unneeded to spawn
+  // temporarily hardcoded
+  yield ["entity_status", { entityId: bot.entity.id, entityStatus: 28 }];
 
-    // unneeded to spawn
-    // temporarily hardcoded
-    ["entity_status", { entityId: bot.entity.id, entityStatus: 28 }],
+  // unneeded to spawn
+  // needed to get commands from server.
+  // yield ["declare_commands", stateData.rawCommandPacket];
 
-    // unneeded to spawn
-    // needed to get commands from server.
-    ["declare_commands", stateData.rawCommandPacket],
+  // unneeded to spawn
+  // unlock recipes
 
-    // unneeded to spawn
-    // unlock recipes
+  // NEEDED TO SPAWN
+  // Update position of entity
+  yield [
+    "position",
+    {
+      ...bot.entity.position,
+      yaw: 180 - (bot.entity.yaw * 180) / Math.PI,
+      pitch: -(bot.entity.pitch * 180) / Math.PI,
+      flags: 0,
+      teleportId: 1,
+    },
+  ];
 
-    // NEEDED TO SPAWN
-    // Update position of entity
-    [
-      "position",
-      {
-        ...bot.entity.position,
-        yaw: 180 - (bot.entity.yaw * 180) / Math.PI,
-        pitch: -(bot.entity.pitch * 180) / Math.PI,
-        flags: 0,
-        teleportId: 1,
-      },
-    ],
+  // unneeded to spawn
+  // get server motd & enforceChatShit
+  // NOTE: we should probably intercept this packet and store since, well, MOTD isn't stored by minecraft-protocol
+  // [
+  //   "server_data",
+  //   {
+  //     motd: '{"text":"lmao placeholder"}',
+  //     enforcesSecureChat: (bot._client as any).serverFeatures.enforcesSecureChat,
+  //   },
+  // ],
 
-    // unneeded to spawn
-    // get server motd & enforceChatShit
-    // NOTE: we should probably intercept this packet and store since, well, MOTD isn't stored by minecraft-protocol
-    // [
-    //   "server_data",
-    //   {
-    //     motd: '{"text":"lmao placeholder"}',
-    //     enforcesSecureChat: (bot._client as any).serverFeatures.enforcesSecureChat,
-    //   },
-    // ],
+  // unneeded to spawn
+  // fills in tablist and other info
+  // Spawns in named entities and players.
+  for (const val of convertPlayers(bot.players, UUID)) {
+    yield val;
+  }
 
-    // unneeded to spawn
-    // fills in tablist and other info
-    // Spawns in named entities and players.
-    ...convertPlayers(bot.players, UUID),
+  // unneeded to spawn
+  // set time to remote bot's
+  // 1.12.2 requires not bigInt, 1.20 does.
+  yield ["update_time", { age: bot.time.bigAge, time: bot.time.bigTime }];
 
-    // unneeded to spawn
-    // set time to remote bot's
-    // 1.12.2 requires not bigInt, 1.20 does.
-    ["update_time", { age: bot.time.bigAge, time: bot.time.bigTime }],
+  // // spawn position
+  yield ["spawn_position", { location: { x: 0, z: -64, y: 73 }, angle: 0 }];
 
-    // // spawn position
-    [ "spawn_position", { location: { x: 0, z: -64, y: 73 }, angle: 0 }],
+  // unneeded to spawn
+  // set view pos to chunk we're spawning in
+  // ["update_view_position", { chunkX: Math.floor(bot.entity.position.x) >> 4, chunkZ: Math.floor(bot.entity.position.z) >> 4 }],
 
-    // unneeded to spawn
-    // set view pos to chunk we're spawning in
-    // ["update_view_position", { chunkX: Math.floor(bot.entity.position.x) >> 4, chunkZ: Math.floor(bot.entity.position.z) >> 4 }],
+  for (const val of convertWorld(bot.world)) {
+    yield val;
+  }
 
-    ...convertWorld(bot.world),
+  // // unneeded for spawn
+  // // set items to remote bot's
+  yield [
+    "window_items",
+    {
+      windowId: 0,
+      statId: 1,
+      items: bot.inventory.slots.map((item: any) => itemToNotch(item)),
+      carriedItem: { present: false },
+    },
+  ];
 
-    // // unneeded for spawn
-    // // set items to remote bot's
-    [
-      "window_items",
-      {
-        windowId: 0,
-        statId: 1,
-        items: bot.inventory.slots.map((item: any) => itemToNotch(item)),
-        carriedItem: { present: false },
-      },
-    ],
+  //? `world_border` (as of 1.12.2) => really needed?
+  for (const val of spawnEntities(bot, itemToNotch)) {
+    yield val;
+  }
 
-    //? `world_border` (as of 1.12.2) => really needed?
-    ...spawnEntities(bot, itemToNotch),
+  // ...(bot.isRaining ? [['game_state_change', { reason: 1, gameMode: 0 }]] : []),
+  if ((bot as any).rainState !== 0) yield ["game_state_change", { reason: 7, gameMode: (bot as any).rainState }];
+  if ((bot as any).thunderState !== 0) yield ["game_state_change", { reason: 8, gameMode: (bot as any).thunderState }];
 
-    // ...(bot.isRaining ? [['game_state_change', { reason: 1, gameMode: 0 }]] : []),
-    // ...((bot as any).rainState !== 0 ? [['game_state_change', { reason: 7, gameMode: (bot as any).rainState }]] : []),
-    // ...((bot as any).thunderState !== 0 ? [['game_state_change', { reason: 8, gameMode: (bot as any).thunderState }]] : []),
+  // ! NOTICE !
+  // everything afterward is not vanilla, we add to sync.
 
-    // ! NOTICE !
-    // everything afterward is not vanilla, we add to sync.
+  // unneeded for spawn
+  // NOT VANILLA
+  // set gamemode as needed (to match bot?)
+  yield ["game_state_change", { reason: 3, gameMode: bot.player.gamemode }];
 
-    // unneeded for spawn
-    // NOT VANILLA
-    // set gamemode as needed (to match bot?)
-    ["game_state_change", { reason: 3, gameMode: bot.player.gamemode }],
+  // unneeded for spawn
+  // NOT VANILLA
+  // set health/food to remote bot's
+  yield ["update_health", { health: bot.health, food: bot.food, foodSaturation: bot.foodSaturation }];
 
-    // unneeded for spawn
-    // NOT VANILLA
-    // set health/food to remote bot's
-    ["update_health", { health: bot.health, food: bot.food, foodSaturation: bot.foodSaturation }],
-  ] as Packet[];
+  return;
 }
 
 const convertPlayers = (players: Record<string, Player>, UUID: string): Packet[] => {
@@ -350,7 +356,7 @@ export function offsetTileEntityPacket(data: any, offset: Vec3): Packet[] {
 }
 
 function spawnEntities(bot: Bot, itemToNotch: typeof import("prismarine-item").Item.toNotch) {
-  const packets = [];
+  const packets: Packet[] = [];
   for (const entity of Object.values(bot.entities)) {
     switch (entity.type) {
       case "orb":

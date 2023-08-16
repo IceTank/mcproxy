@@ -308,8 +308,9 @@ export class Conn {
    * @param pclient
    */
   sendPackets(pclient: Client) {
-
-    this.generatePackets(pclient).filter(p => !!p[1]).forEach((packet) => pclient.write(...packet));
+    for (const packet of this.generatePackets(pclient)) {
+      pclient.write(...packet)
+    }
   }
 
   /**
@@ -318,7 +319,7 @@ export class Conn {
    * generic packets.
    * @param pclient Optional. Does nothing.
    */
-  generatePackets(pclient?: Client): Packet[] {
+  * generatePackets(pclient?: Client): Generator<Packet, void, void> {
     if (this.positionTransformer) {
       const transformer = this.positionTransformer
       const packets: Packet[] = []
@@ -326,18 +327,15 @@ export class Conn {
       for (const generatedPacket of generatePackets(this.stateData, pclient, offset)) {
         const [name, data] = generatedPacket
         if (name === 'map_chunk' || name === 'tile_entity_data') { // TODO: move offsetting into generatePackets
-          packets.push(generatedPacket)
-          continue
+          yield generatedPacket;
+          // continue
         }
         const transformedData = transformer.onSToCPacket(name, data)
         if (!transformedData) continue
-        packets.push(...transformedData)
+        for (const val of transformedData) yield val;
       }
-      return packets
     } else {
-      const data = generatePackets(this.stateData, pclient);
-      // console.log(data[1])
-      return data;
+      for (const val of generatePackets(this.stateData, pclient)) yield val;
     }
   }
 
