@@ -6,16 +6,16 @@ import { Vec3 } from "vec3";
 import { StateData } from "./stateData";
 import { Entity } from "prismarine-entity";
 import deepcopy from "deepcopy";
+import * as fs from "fs";
 
 const MAX_CHUNK_DATA_LENGTH = 31598;
 
-
 function entityYawToIntPacket(num: number) {
-  return -(Math.floor(((num / Math.PI) * 128 + 255) % 256) - 127)
+  return -(Math.floor(((num / Math.PI) * 128 + 255) % 256) - 127);
 }
 
 function entityPitchToIntPacket(num: number) {
-  return -Math.floor(((num / Math.PI) * 128) % 256)
+  return -Math.floor(((num / Math.PI) * 128) % 256);
 }
 
 export type PacketTuple = {
@@ -73,23 +73,19 @@ export function generatePackets(
   //* if not spawned yet, return nothing
   if (!bot.entity) return [];
 
-
-  console.log(["position", { ...bot.entity.position, yaw: 180 - (bot.entity.yaw * 180) / Math.PI, pitch: -(bot.entity.pitch * 180) / Math.PI } ],)
   //* load up some helper methods
   const { toNotch: itemToNotch }: typeof import("prismarine-item").Item = require("prismarine-item")(
     pclient?.version ?? bot.version
   );
   const UUID = bot.player.uuid; //pclient?.uuid ??
 
- 
-  // console.log("hi", bot.game, (bot._client as any).serverFeatures.enforcesSecureChat);
   return [
     // store rawLoginPacket since mineflayer does not handle storing data correctly.
     ["login", stateData.rawLoginPacket],
 
     // unneeded to spawn
     // hardcoded unlocked difficulty because mineflayer doesn't save.
-    ["difficulty", { difficulty: bot.game.difficulty, difficultyLocked: false }],
+    ["difficulty", { difficulty: bot.game.difficulty }], //, difficultyLocked: false
 
     // unneeded to spawn
     // ability generation seems fine
@@ -111,30 +107,48 @@ export function generatePackets(
 
     // unneeded to spawn
     // needed to get commands from server.
-    ["declare_commands", stateData.rawCommandPacket],
+    // ["declare_commands", stateData.rawCommandPacket],
 
     // unneeded to spawn
     // unlock recipes
 
-
     // NEEDED TO SPAWN
     // Update position of entity
-    ["position", { ...bot.entity.position, yaw: 180 - (bot.entity.yaw * 180) / Math.PI, pitch: -(bot.entity.pitch * 180) / Math.PI} ],
+    [
+      "position",
+      {
+        ...bot.entity.position,
+        yaw: 180 - (bot.entity.yaw * 180) / Math.PI,
+        pitch: -(bot.entity.pitch * 180) / Math.PI,
+      },
+    ],
 
     // unneeded to spawn
     // get server motd & enforceChatShit
-    ["server_data", {motd: '{"text":"lmao placeholder"}', enforcesSecureChat:(bot._client as any).serverFeatures.enforcesSecureChat}],
+    // NOTE: we should probably intercept this packet and store since, well, MOTD isn't stored by minecraft-protocol
+    [
+      "server_data",
+      {
+        motd: '{"text":"lmao placeholder"}',
+        enforcesSecureChat: (bot._client as any).serverFeatures.enforcesSecureChat,
+      },
+    ],
 
     // unneeded to spawn
     // fills in tablist and other info
     // Spawns in named entities and players.
     ...Object.values(bot.players).reduce<Packet[]>((packets, { uuid, username, gamemode, ping, entity }) => {
-      // if (uuid != UUID) {
+      if (uuid !== UUID) {
         packets.push([
+          //   "player_info",
+          //   {
+          //     action: 63,
+          //     data: [{ uuid, player: { name: username, properties: [] }, gamemode, latency: ping, listed: true}],
+          //   },
           "player_info",
           {
-            action: 63,
-            data: [{ uuid, player: { name: username, properties: [] }, gamemode, latency: ping, listed: true}],
+            action: 0,
+            data: [{ UUID: uuid, name: username, properties: [], gamemode, ping, displayName: undefined }],
           },
         ]);
         if (entity) {
@@ -154,17 +168,17 @@ export function generatePackets(
               "entity_head_rotation",
               {
                 entityId: entity.id,
-                headYaw: entityYawToIntPacket((entity as any).headYaw)
+                headYaw: entityYawToIntPacket((entity as any).headYaw),
               },
             ]);
         }
-      // }
+      }
       return packets;
     }, []),
 
     // unneeded to spawn
     // set time to remote bot's
-    ['update_time', {age: bot.time.bigAge, time: bot.time.bigTime}],
+    ["update_time", { age: Number(bot.time.bigAge), time: Number(bot.time.bigTime) }],
 
     // unneeded to spawn
     // set view pos to chunk we're spawning in
@@ -196,8 +210,9 @@ export function generatePackets(
       },
     ],
 
-    // ['map_chunk', convertPackets(bot.world.getColumns()[0])]
-  
+    // ["map_chunk", bot.world.getColumns().map((c: any) => convertPackets(c))],
+    ...(bot.world.getColumns() as any[]).reduce((packets, c) => [...packets, ["map_chunk", convertPackets(c)]], []),
+
     // ...(bot.world.getColumns() as any[])[0].reduce<Packet[]>((packets, chunk) => [...packets, convertPackets(chunk)], []),
     //   // //? `world_border` (as of 1.12.2) => really needed?
     //   // //! block entities moved to chunk packet area
@@ -209,8 +224,73 @@ export function generatePackets(
 }
 
 function convertPackets(chunk: any) {
-  console.log("hey", chunk.column.toJson().heightmaps)
-  return chunk.column.toJson()
+  const data1 = chunk.column.dumpLight();
+  // if (chunk.chunkX == 7 && chunk.chunkZ == 18) {
+  //   fs.writeFileSync(
+  //     "fuck.json",
+  //     JSON.stringify({
+  //       x: Number(chunk.chunkX),
+  //       z: Number(chunk.chunkZ),
+  //       groundUp: true,
+  //       bitMap: 31,
+  //       chunkData: chunk.column.dump(),
+  //       blockEntities: [],
+  //       // skyLightMask: data1.skyLightMask,
+  //       // blockLightMask: data1.blockLightMask,
+  //       // emptySkyLightMask: data1.emptySkyLightMask,
+  //       // emptyBlockLightMask: data1.emptyBlockLightMask,
+  //       // skyLight: data1.skyLight.map((d:any)=>Array.from(d)), // I don't think this is necessary.
+  //       // blockLight: data1.blockLight.map((d:any)=>Array.from(d)), // I don't think this is necessary.
+  //     })
+  //   );
+  // }
+  // const data = chunk.column.toJson();
+
+  // fs.writeFileSync('fuck.json', JSON.stringify({x: chunk.chunkX, z: chunk.chunkZ, column: JSON.parse(chunk.column.toJson()), fuck: chunk.column.dump()}));
+  // fs.writeFileSync('fuck2.json', JSON.stringify({
+  //   x: Number(chunk.chunkX),
+  //   z: Number(chunk.chunkZ),
+  //   chunkData: chunk.column.dump(),
+  //   blockEntities: [],
+  //   skyLightMask: data1.skyLightMask,
+  //   blockLightMask: data1.blockLightMask,
+  //   emptySkyLightMask: data1.emptySkyLightMask,
+  //   emptyBlockLightMask: data1.emptyBlockLightMask,
+  //   skyLight: data1.skyLight.map((d:any)=>Array.from(d)),
+  //   blockLight: data1.blockLight.map((d:any)=>Array.from(d)),
+  // }))
+
+  const ret: Record<string, any> = {
+    x: Number(chunk.chunkX),
+    z: Number(chunk.chunkZ),
+  };
+
+  if (!!data1) {
+    (ret.skyLightMask = data1.skyLightMask),
+      (ret.blockLightMask = data1.blockLightMask),
+      (ret.emptySkyLightMask = data1.emptySkyLightMask),
+      (ret.emptyBlockLightMask = data1.emptyBlockLightMask),
+      (ret.skyLight = data1.skyLight.map((d: any) => Array.from(d))), // I don't think this is necessary.
+      (ret.blockLight = data1.blockLight.map((d: any) => Array.from(d))); // I don't think this is necessary.
+  } else {
+    ret.groundUp = true;
+    ret.bitMap = chunk.column.getMask();
+  }
+
+  ret.chunkData = chunk.column.dump();
+  if (Object.keys(chunk.column.blockEntities).length)
+  ret.blockEntities = [chunk.column.blockEntities]; //chunk.column.blockEntities;
+
+  // if (chunk.chunkX == 7 && chunk.chunkZ == 18) {
+  // console.log(ret)
+  // fs.writeFileSync(
+  //   `${chunk.chunkX},${chunk.chunkZ}.json`,
+  //   JSON.stringify(ret)
+  // );
+  // }
+
+  console.log(ret.blockEntities);
+  return ret;
   // const chunkData = new SmartBuffer();
   // return {
   //   x: chunk.chunkX,
@@ -219,9 +299,7 @@ function convertPackets(chunk: any) {
   //   chunkData: chunkData.toBuffer(),
   //   blockEntities: chunk.blockEntities ? [] : chunk.blockEntities
   // }
-
 }
-
 
 function getMetaArrayForEntity(entity: Entity) {
   const meta = entity.metadata;
@@ -254,53 +332,51 @@ function getMetaArrayForEntity(entity: Entity) {
   return compArr;
 }
 
-
-const shulkerIds = [
-  219, 220, 221, 222,
-  223, 224, 225, 226,
-  227, 228, 229, 230,
-  231, 232, 233, 234
-]
+const shulkerIds = [219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234];
 
 function toYawWeird(num: number) {
   return -(Math.floor(((num / Math.PI) * 128 + 255) % 256) - 127);
 }
 
 export function offsetTileEntityData(originalLocation: Vec3, nbtData: BlockEntityNbt, offset: Vec3) {
-  const originalPosition = new Vec3(originalLocation.x, originalLocation.y, originalLocation.z)
-  const offsetPosition = originalPosition.minus(offset)
+  const originalPosition = new Vec3(originalLocation.x, originalLocation.y, originalLocation.z);
+  const offsetPosition = originalPosition.minus(offset);
   const nbtDataNew: BlockEntityNbt = {
-    type: 'compound',
+    type: "compound",
     name: "",
     value: {
       ...nbtData.value,
-      x: { type: 'int', value: offsetPosition.x },
-      y: { type: 'int', value: offsetPosition.y },
-      z: { type: 'int', value: offsetPosition.z },
-    }
-  }
+      x: { type: "int", value: offsetPosition.x },
+      y: { type: "int", value: offsetPosition.y },
+      z: { type: "int", value: offsetPosition.z },
+    },
+  };
   return {
     ...nbtData,
     ...nbtDataNew,
-  }
+  };
 }
 
 export function offsetTileEntityPacket(data: any, offset: Vec3): Packet[] {
-  const originalPosition = new Vec3(data.location.x, data.location.y, data.location.z)
-  return [['tile_entity_data', {
-    ...data,
-    location: originalPosition.minus(offset),
-    nbtData: offsetTileEntityData(originalPosition, data.nbtData, offset) 
-  }]] as Packet[]
+  const originalPosition = new Vec3(data.location.x, data.location.y, data.location.z);
+  return [
+    [
+      "tile_entity_data",
+      {
+        ...data,
+        location: originalPosition.minus(offset),
+        nbtData: offsetTileEntityData(originalPosition, data.nbtData, offset),
+      },
+    ],
+  ] as Packet[];
 }
 
-
-function spawnEntities(bot: Bot, itemToNotch: typeof import('prismarine-item').Item.toNotch) {
+function spawnEntities(bot: Bot, itemToNotch: typeof import("prismarine-item").Item.toNotch) {
   return Object.values(bot.entities).reduce<Packet[]>((packets, entity) => {
     switch (entity.type) {
-      case 'orb':
+      case "orb":
         packets.push([
-          'spawn_entity_experience_orb',
+          "spawn_entity_experience_orb",
           {
             ...entity.position,
             entityId: entity.id,
@@ -309,10 +385,10 @@ function spawnEntities(bot: Bot, itemToNotch: typeof import('prismarine-item').I
         ]);
         break;
 
-      case 'mob':
+      case "mob":
         packets.push(
           [
-            'spawn_entity_living',
+            "spawn_entity_living",
             {
               ...entity.position,
               entityId: entity.id,
@@ -330,7 +406,7 @@ function spawnEntities(bot: Bot, itemToNotch: typeof import('prismarine-item').I
           ...entity.equipment.reduce((arr, item, slot) => {
             if (item)
               arr.push([
-                'entity_equipment',
+                "entity_equipment",
                 {
                   entityId: entity.id,
                   slot,
@@ -342,9 +418,9 @@ function spawnEntities(bot: Bot, itemToNotch: typeof import('prismarine-item').I
         );
         break;
 
-      case 'object':
+      case "object":
         packets.push([
-          'spawn_entity',
+          "spawn_entity",
           {
             ...entity.position,
             entityId: entity.id,
@@ -358,11 +434,15 @@ function spawnEntities(bot: Bot, itemToNotch: typeof import('prismarine-item').I
             velocityZ: entity.velocity.z,
           },
         ]);
-        if (entity.entityType === 71 && entity.metadata) { // Special fix for item frames
-          packets.push(['entity_metadata', {
-            entityId: entity.id,
-            metadata: getMetaArrayForEntity(entity)
-          }])
+        if (entity.entityType === 71 && entity.metadata) {
+          // Special fix for item frames
+          packets.push([
+            "entity_metadata",
+            {
+              entityId: entity.id,
+              metadata: getMetaArrayForEntity(entity),
+            },
+          ]);
         }
         break;
 
@@ -372,32 +452,40 @@ function spawnEntities(bot: Bot, itemToNotch: typeof import('prismarine-item').I
     }
     if ((entity as any).rawMetadata?.length > 0)
       packets.push([
-        'entity_metadata',
+        "entity_metadata",
         {
           entityId: entity.id,
           metadata: (entity as any).rawMetadata,
         },
       ]);
     return packets;
-  }, [])
+  }, []);
 }
 
-type NbtPositionTag = { type: 'int'; value: number };
-export type BlockEntityNbt = { type: "compound", name: "", value: { x: NbtPositionTag; y: NbtPositionTag; z: NbtPositionTag; id: { type: "string", value: string } } };
-export type TileEntityPacket = { location: { x: number, y: number, z: number }, action: number, nbtData: BlockEntityNbt }
+type NbtPositionTag = { type: "int"; value: number };
+export type BlockEntityNbt = {
+  type: "compound";
+  name: "";
+  value: { x: NbtPositionTag; y: NbtPositionTag; z: NbtPositionTag; id: { type: "string"; value: string } };
+};
+export type TileEntityPacket = {
+  location: { x: number; y: number; z: number };
+  action: number;
+  nbtData: BlockEntityNbt;
+};
 //* splits a single chunk column into multiple packets if needed
 export function chunkColumnToPacketsWithOffset(
   { chunkX: x, chunkZ: z, column }: { chunkX: number; chunkZ: number; column: any },
   lastBitMask?: number,
   chunkDataArg?: SmartBuffer,
   chunkEntities: BlockEntityNbt[] = [],
-  offset?: { offsetBlock: Vec3, offsetChunk: Vec3 }
+  offset?: { offsetBlock: Vec3; offsetChunk: Vec3 }
 ): Packet[] {
   let bitMask = !!lastBitMask ? column.getMask() ^ (column.getMask() & ((lastBitMask << 1) - 1)) : column.getMask();
   let bitMap = lastBitMask ?? 0b0;
   let newChunkData = new SmartBuffer();
-  const realOffset = offset ?? { offsetBlock: new Vec3(0, 0, 0), offsetChunk: new Vec3(0, 0, 0) }
-  let chunkData = chunkDataArg ?? new SmartBuffer()
+  const realOffset = offset ?? { offsetBlock: new Vec3(0, 0, 0), offsetChunk: new Vec3(0, 0, 0) };
+  let chunkData = chunkDataArg ?? new SmartBuffer();
 
   // checks with bitmask if there is a chunk in memory that (a) exists and (b) was not sent to the client yet
   for (let i = 0; i < 16; i++)
@@ -407,19 +495,34 @@ export function chunkColumnToPacketsWithOffset(
       if (chunkData.length + newChunkData.length > MAX_CHUNK_DATA_LENGTH) {
         if (!lastBitMask) column.biomes?.forEach((biome: number) => chunkData.writeUInt8(biome));
         return [
-          ['map_chunk', { 
-            x: x - realOffset.offsetChunk.x, 
-            z: z - realOffset.offsetChunk.z, 
-            bitMap, 
-            chunkData: chunkData.toBuffer(), 
-            groundUp: !lastBitMask, 
-            blockEntities: chunkDataArg ? [] : Object.entries(column.blockEntities).map((data) => {
-              const nbtData: BlockEntityNbt = data[1] as unknown as BlockEntityNbt
-              const originalLocation = new Vec3(nbtData.value.x.value, nbtData.value.y.value, nbtData.value.z.value)
-              return offsetTileEntityData(originalLocation, nbtData, realOffset.offsetBlock)
-            })
-          }],
-          ...chunkColumnToPacketsWithOffset({ chunkX: x, chunkZ: z, column }, 0b1 << i, newChunkData, undefined, offset),
+          [
+            "map_chunk",
+            {
+              x: x - realOffset.offsetChunk.x,
+              z: z - realOffset.offsetChunk.z,
+              bitMap,
+              chunkData: chunkData.toBuffer(),
+              groundUp: !lastBitMask,
+              blockEntities: chunkDataArg
+                ? []
+                : Object.entries(column.blockEntities).map((data) => {
+                    const nbtData: BlockEntityNbt = data[1] as unknown as BlockEntityNbt;
+                    const originalLocation = new Vec3(
+                      nbtData.value.x.value,
+                      nbtData.value.y.value,
+                      nbtData.value.z.value
+                    );
+                    return offsetTileEntityData(originalLocation, nbtData, realOffset.offsetBlock);
+                  }),
+            },
+          ],
+          ...chunkColumnToPacketsWithOffset(
+            { chunkX: x, chunkZ: z, column },
+            0b1 << i,
+            newChunkData,
+            undefined,
+            offset
+          ),
           // ...getChunkEntityPacketsWithOffset(column, column.blockEntities, offset),
         ];
       }
@@ -428,57 +531,85 @@ export function chunkColumnToPacketsWithOffset(
       newChunkData.clear();
     }
   if (!lastBitMask) column.biomes?.forEach((biome: number) => chunkData.writeUInt8(biome));
-  return [['map_chunk', { 
-    x: x - realOffset.offsetChunk.x, z: z - realOffset.offsetChunk.z, 
-    bitMap, chunkData: chunkData.toBuffer(), groundUp: !lastBitMask, 
-    blockEntities: chunkDataArg ? [] : Object.entries(column.blockEntities).map((data) => {
-      const nbtData: BlockEntityNbt = data[1] as unknown as BlockEntityNbt
-      const originalLocation = new Vec3(nbtData.value.x.value, nbtData.value.y.value, nbtData.value.z.value)
-      return offsetTileEntityData(originalLocation, nbtData, realOffset.offsetBlock)
-    })
-  }], /** ...getChunkEntityPacketsWithOffset(column, column.blockEntities, offset) */];
+  return [
+    [
+      "map_chunk",
+      {
+        x: x - realOffset.offsetChunk.x,
+        z: z - realOffset.offsetChunk.z,
+        bitMap,
+        chunkData: chunkData.toBuffer(),
+        groundUp: !lastBitMask,
+        blockEntities: chunkDataArg
+          ? []
+          : Object.entries(column.blockEntities).map((data) => {
+              const nbtData: BlockEntityNbt = data[1] as unknown as BlockEntityNbt;
+              const originalLocation = new Vec3(nbtData.value.x.value, nbtData.value.y.value, nbtData.value.z.value);
+              return offsetTileEntityData(originalLocation, nbtData, realOffset.offsetBlock);
+            }),
+      },
+    ] /** ...getChunkEntityPacketsWithOffset(column, column.blockEntities, offset) */,
+  ];
 }
 
-function getChunkEntityPacketsWithOffset(column: any, blockEntities: { [pos: string]: BlockEntityNbt }, offset?: { offsetBlock: Vec3, offsetChunk: Vec3 }) {
-  offset = offset ?? { offsetBlock: new Vec3(0, 0, 0), offsetChunk: new Vec3(0, 0, 0)}
+function getChunkEntityPacketsWithOffset(
+  column: any,
+  blockEntities: { [pos: string]: BlockEntityNbt },
+  offset?: { offsetBlock: Vec3; offsetChunk: Vec3 }
+) {
+  offset = offset ?? { offsetBlock: new Vec3(0, 0, 0), offsetChunk: new Vec3(0, 0, 0) };
   const packets: Packet[] = [];
-  if (Object.values(blockEntities).length) console.info('Block entities: ', Object.values(blockEntities).map(b => b.value.id.value))
+  if (Object.values(blockEntities).length)
+    console.info(
+      "Block entities: ",
+      Object.values(blockEntities).map((b) => b.value.id.value)
+    );
   for (const nbtData of Object.values(blockEntities)) {
-    const locationOriginal = new Vec3(nbtData.value.x.value, nbtData.value.y.value, nbtData.value.z.value)
-    const location = locationOriginal.minus(offset.offsetBlock)
-    location.y = locationOriginal.y
+    const locationOriginal = new Vec3(nbtData.value.x.value, nbtData.value.y.value, nbtData.value.z.value);
+    const location = locationOriginal.minus(offset.offsetBlock);
+    location.y = locationOriginal.y;
 
     const block = column.getBlock(posInChunk(location));
-    let action: number | null = null
-    if (block.type === 138) { // Beacon
-      action = 3
-    } else if (block.type === 144) { // Skull
-      action = 4
-    } else if (block.type === 140) { // Flower pot
-      action = 5
-    } else if (block.type === 176 || block.type === 177) { // Wall and standing banner
-      action = 6
-    } else if (block.type === 209) { // End gateway
-      action = 8
-    } else if (block.type === 63 || block.type === 68) { // Sign
-      action = 9
+    let action: number | null = null;
+    if (block.type === 138) {
+      // Beacon
+      action = 3;
+    } else if (block.type === 144) {
+      // Skull
+      action = 4;
+    } else if (block.type === 140) {
+      // Flower pot
+      action = 5;
+    } else if (block.type === 176 || block.type === 177) {
+      // Wall and standing banner
+      action = 6;
+    } else if (block.type === 209) {
+      // End gateway
+      action = 8;
+    } else if (block.type === 63 || block.type === 68) {
+      // Sign
+      action = 9;
     } else if (shulkerIds.includes(block.type)) {
-      action = 10
-    } else if (block.type === 26) { // Bed
-      action = 11
+      action = 10;
+    } else if (block.type === 26) {
+      // Bed
+      action = 11;
     }
 
     if (action !== null) {
-      const foo = ['tile_entity_data', {
-        location,
-        action: action,
-        nbtData: offsetTileEntityData(locationOriginal, nbtData, offset.offsetBlock)
-      }] as Packet
+      const foo = [
+        "tile_entity_data",
+        {
+          location,
+          action: action,
+          nbtData: offsetTileEntityData(locationOriginal, nbtData, offset.offsetBlock),
+        },
+      ] as Packet;
       // console.info('Tile entity packet', foo)
-      packets.push(foo)
+      packets.push(foo);
     } else if (block.type == 54 || block.type === 146) {
-      console.info('Chest nbt', nbtData)
-      packets.push(['block_action', { location, byte1: 1, byte2: 0, blockId: block.type }]);
+      console.info("Chest nbt", nbtData);
+      packets.push(["block_action", { location, byte1: 1, byte2: 0, blockId: block.type }]);
     }
   }
   return packets;
@@ -501,14 +632,16 @@ function getChunkEntityPacketsWithOffset(column: any, blockEntities: { [pos: str
 
  */
 
-export function chunkColumnToPackets(bot: Bot,
-    { chunkX, chunkZ, column }: { chunkX: number; chunkZ: number; column: any },
-    lastBitMask?: number,
-    chunkData: SmartBuffer = new SmartBuffer(),
-    chunkEntities: BlockEntityNbt[] = []) {
-  return chunkColumnToPacketsWithOffset({ chunkX, chunkZ, column }, lastBitMask, chunkData, chunkEntities)
+export function chunkColumnToPackets(
+  bot: Bot,
+  { chunkX, chunkZ, column }: { chunkX: number; chunkZ: number; column: any },
+  lastBitMask?: number,
+  chunkData: SmartBuffer = new SmartBuffer(),
+  chunkEntities: BlockEntityNbt[] = []
+) {
+  return chunkColumnToPacketsWithOffset({ chunkX, chunkZ, column }, lastBitMask, chunkData, chunkEntities);
 }
 
-function posInChunk (pos: Vec3) {
-  return new Vec3(Math.floor(pos.x) & 15, Math.floor(pos.y), Math.floor(pos.z) & 15)
+function posInChunk(pos: Vec3) {
+  return new Vec3(Math.floor(pos.x) & 15, Math.floor(pos.y), Math.floor(pos.z) & 15);
 }

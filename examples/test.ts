@@ -7,9 +7,10 @@ const minecraft_protocol = require('minecraft-protocol');
 // https://github.com/PrismarineJS/mineflayer
 let conn = new mcproxy.Conn({
   username: 'Generel_Schwerz',
-  version: '1.20.1',
-  host: 'localhost',
-  port: 25565,
+  // auth: 'microsoft',
+  version: '1.12.2',
+  host: 'Generel2.aternos.me',
+  port:28803,
   skipValidation: true,
 });
 
@@ -28,7 +29,7 @@ conn.stateData.bot.on('end', (reason: any) => {
 // open a server
 // https://github.com/PrismarineJS/node-minecraft-protocol
 const server = minecraft_protocol.createServer({
-  version: '1.20.1',
+  version: '1.12.2',
   host: 'localhost',
   'online-mode': false,
   port: 25566,
@@ -39,6 +40,8 @@ server.on('listening', () => {
 });
 
 conn.stateData.bot._client.on('login', console.log)
+// conn.stateData.bot._client.on('map_chunk', (packet) => {if (packet.blockEntities.length) console.log(JSON.stringify(packet.blockEntities))})
+
 // accept client connections on your server,
 // make sure not to use "connection" instead of "login"
 server.on('login', async (client: any) => {
@@ -49,3 +52,6 @@ server.on('login', async (client: any) => {
   // it the one to receive and send all packets
   conn.link(client);
 });
+
+
+
