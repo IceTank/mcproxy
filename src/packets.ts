@@ -145,7 +145,10 @@ export function generatePackets(
     // unneeded to spawn
     // set time to remote bot's
     // 1.12.2 requires not bigInt, 1.20 does.
-    ["update_time", { age: Number(bot.time.bigAge), time: Number(bot.time.bigTime) }],
+    ["update_time", { age: bot.time.bigAge, time: bot.time.bigTime }],
+
+    // spawn position
+    [ "spawn_position", { location: { x: 0, z: -64, y: 73 }, angle: 0 }],
 
     // unneeded to spawn
     // set view pos to chunk we're spawning in
@@ -166,14 +169,12 @@ export function generatePackets(
       },
     ],
 
-      //? `world_border` (as of 1.12.2) => really needed?
+    //? `world_border` (as of 1.12.2) => really needed?
     ...spawnEntities(bot, itemToNotch),
-
 
     // ...(bot.isRaining ? [['game_state_change', { reason: 1, gameMode: 0 }]] : []),
     // ...((bot as any).rainState !== 0 ? [['game_state_change', { reason: 7, gameMode: (bot as any).rainState }]] : []),
     // ...((bot as any).thunderState !== 0 ? [['game_state_change', { reason: 8, gameMode: (bot as any).thunderState }]] : []),
-
 
     // ! NOTICE !
     // everything afterward is not vanilla, we add to sync.
@@ -187,9 +188,6 @@ export function generatePackets(
     // NOT VANILLA
     // set health/food to remote bot's
     ["update_health", { health: bot.health, food: bot.food, foodSaturation: bot.foodSaturation }],
-
-
-
   ] as Packet[];
 }
 
@@ -198,16 +196,16 @@ const convertPlayers = (players: Record<string, Player>, UUID: string): Packet[]
   for (const key in players) {
     const { uuid, username, gamemode, ping, entity } = players[key];
     packets.push([
-        "player_info",
-        {
-          action: 63,
-          data: [{ uuid, player: { name: username, properties: [] }, gamemode, latency: ping, listed: true}],
-        },
       // "player_info",
       // {
-      //   action: 0,
-      //   data: [{ UUID: uuid, name: username, properties: [], gamemode, ping, displayName: undefined }],
+      //   action: 63,
+      //   data: [{ uuid, player: { name: username, properties: [] }, gamemode, latency: ping, listed: true }],
       // },
+      "player_info",
+      {
+        action: 0,
+        data: [{ UUID: uuid, name: username, properties: [], gamemode, ping, displayName: undefined }],
+      },
     ]);
     if (uuid === UUID) continue; // skip this if its us.
     if (entity) {
@@ -273,7 +271,8 @@ const convertWorld = (world: any): Packet[] => {
     } else {
       ret.groundUp = true;
       ret.bitMap = chunk.column.getMask();
-      ret.blockEntities = Object.values(chunk.column.blockEntities);
+      ret.blockEntities = [];
+      // ret.blockEntities = Object.values(chunk.column.blockEntities);
     }
 
     ret.chunkData = chunk.column.dump();
