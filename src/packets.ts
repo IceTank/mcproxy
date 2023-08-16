@@ -153,7 +153,8 @@ export function* generatePackets(
 
   // unneeded to spawn
   // set view pos to chunk we're spawning in
-  // ["update_view_position", { chunkX: Math.floor(bot.entity.position.x) >> 4, chunkZ: Math.floor(bot.entity.position.z) >> 4 }],
+  // NEEDED TO SPAWN FAST IN 1.19, CAUSES CRASH IN 1.12
+  yield ["update_view_position", { chunkX: Math.floor(bot.entity.position.x) >> 4, chunkZ: Math.floor(bot.entity.position.z) >> 4 }];
 
   for (const val of convertWorld(bot.world)) {
     yield val;
@@ -201,16 +202,16 @@ const convertPlayers = (players: Record<string, Player>, UUID: string): Packet[]
   for (const key in players) {
     const { uuid, username, gamemode, ping, entity } = players[key];
     packets.push([
-      // "player_info",
-      // {
-      //   action: 63,
-      //   data: [{ uuid, player: { name: username, properties: [] }, gamemode, latency: ping, listed: true }],
-      // },
       "player_info",
       {
-        action: 0,
-        data: [{ UUID: uuid, name: username, properties: [], gamemode, ping, displayName: undefined }],
+        action: 63,
+        data: [{ uuid, player: { name: username, properties: [] }, gamemode, latency: ping, listed: true }],
       },
+      // "player_info",
+      // {
+      //   action: 0,
+      //   data: [{ UUID: uuid, name: username, properties: [], gamemode, ping, displayName: undefined }],
+      // },
     ]);
     if (uuid === UUID) continue; // skip this if its us.
     if (entity) {

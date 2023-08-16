@@ -4,8 +4,8 @@ import * as mcproxy from '../src';
 const minecraft_protocol = require('minecraft-protocol');
 
 
-const version = '1.12.2'
-const str = 'Generel.aternos.me'
+const version = '1.19.4'
+const str = 'Generel2.aternos.me'
 const host = str.split(':')[0]
 const port = Number(str.split(':')[1])
 
