@@ -86,7 +86,7 @@ export function generatePackets(
 
     // unneeded to spawn
     // hardcoded unlocked difficulty because mineflayer doesn't save.
-    ["difficulty", { difficulty: bot.game.difficulty }], //, difficultyLocked: false
+    ["difficulty", { difficulty: bot.game.difficulty, difficultyLocked: false }], //, 
 
     // unneeded to spawn
     // ability generation seems fine
@@ -129,13 +129,13 @@ export function generatePackets(
     // unneeded to spawn
     // get server motd & enforceChatShit
     // NOTE: we should probably intercept this packet and store since, well, MOTD isn't stored by minecraft-protocol
-    [
-      "server_data",
-      {
-        motd: '{"text":"lmao placeholder"}',
-        enforcesSecureChat: (bot._client as any).serverFeatures.enforcesSecureChat,
-      },
-    ],
+    // [
+    //   "server_data",
+    //   {
+    //     motd: '{"text":"lmao placeholder"}',
+    //     enforcesSecureChat: (bot._client as any).serverFeatures.enforcesSecureChat,
+    //   },
+    // ],
 
     // unneeded to spawn
     // fills in tablist and other info
@@ -147,18 +147,17 @@ export function generatePackets(
     // 1.12.2 requires not bigInt, 1.20 does.
     ["update_time", { age: bot.time.bigAge, time: bot.time.bigTime }],
 
-    // spawn position
+    // // spawn position
     [ "spawn_position", { location: { x: 0, z: -64, y: 73 }, angle: 0 }],
 
     // unneeded to spawn
     // set view pos to chunk we're spawning in
-    ["update_view_position", { chunkX: bot.entity.position.x >> 4, chunkZ: bot.entity.position.z >> 4 }],
+    // ["update_view_position", { chunkX: Math.floor(bot.entity.position.x) >> 4, chunkZ: Math.floor(bot.entity.position.z) >> 4 }],
 
-    // ["map_chunk", bot.world.getColumns().map((c: any) => convertPackets(c))],
     ...convertWorld(bot.world),
 
-    // unneeded for spawn
-    // set items to remote bot's
+    // // unneeded for spawn
+    // // set items to remote bot's
     [
       "window_items",
       {
@@ -271,8 +270,7 @@ const convertWorld = (world: any): Packet[] => {
     } else {
       ret.groundUp = true;
       ret.bitMap = chunk.column.getMask();
-      ret.blockEntities = [];
-      // ret.blockEntities = Object.values(chunk.column.blockEntities);
+      ret.blockEntities = Object.values(chunk.column.blockEntities);
     }
 
     ret.chunkData = chunk.column.dump();
