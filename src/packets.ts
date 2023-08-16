@@ -253,15 +253,8 @@ const convertWorld = (world: any): Packet[] => {
 
     if (!!data1) {
       ret.heightmaps = { type: "compound", name: "", value: {} };
-
-      // if (chunk.column.trustEdges)
       ret.trustEdges = true;
-      ret.skyLightMask = data1.skyLightMask;
-      ret.blockLightMask = data1.blockLightMask;
-      ret.emptySkyLightMask = data1.emptySkyLightMask;
-      ret.emptyBlockLightMask = data1.emptyBlockLightMask;
-      ret.skyLight = data1.skyLight; // I don't think this is necessary.
-      ret.blockLight = data1.blockLight; // I don't think this is necessary.
+      Object.assign(ret, data1);
 
       if (Object.keys(chunk.column.blockEntities).length) {
         for (const [key, val] of Object.entries<any>(chunk.column.blockEntities)) {
@@ -618,7 +611,7 @@ function getChunkEntityPacketsWithOffset(
 
  */
 
-export function chunkColumnToPackets(
+function chunkColumnToPackets(
   bot: Bot,
   { chunkX, chunkZ, column }: { chunkX: number; chunkZ: number; column: any },
   lastBitMask?: number,
