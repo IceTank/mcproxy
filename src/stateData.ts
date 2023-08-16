@@ -1,17 +1,25 @@
 import type { Bot } from 'mineflayer';
 
 export class StateData {
-  recipes: number[] = [];
+  recipes: any[] = [];
+  unlockRecipes: any[] = [];
   flying: boolean = false;
   bot: Bot;
   rawLoginPacket: any;
   rawCommandPacket: any;
+  tags: any[] = [];
 
   constructor(bot: Bot) {
     this.bot = bot;
 
-    this.bot._client.on('login', (packet) => {this.rawLoginPacket = packet})
+    this.bot._client.on('login', (packet) => {
+      this.rawLoginPacket = packet
+      console.info('Login packet', packet)
+    })
     this.bot._client.on('declare_commands', (packet)=> {this.rawCommandPacket = packet})
+    this.bot._client.on('tags', (packet) => this.tags = packet)
+    this.bot._client.on('declare_recipes', (packet) => this.recipes = packet)
+    this.bot._client.on('unlock_recipes', (packet) => this.unlockRecipes = packet)
   }
 
   onCToSPacket(name: string, data: any) {

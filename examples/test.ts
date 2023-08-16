@@ -39,7 +39,7 @@ server.on('listening', () => {
   console.info('Listening on', 25566);
 });
 
-conn.stateData.bot._client.on('login', console.log)
+// conn.stateData.bot._client.on('login', console.log)
 // conn.stateData.bot._client.on('map_chunk', (packet) => {if (packet.blockEntities.length) console.log(JSON.stringify(packet.blockEntities))})
 
 // accept client connections on your server,

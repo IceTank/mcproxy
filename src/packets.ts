@@ -64,80 +64,113 @@ export function sendTo(pclient: Client, ...args: PacketTuple[]) {
   }
 }
 
-export function generatePackets(
+export function* generatePackets(
   stateData: StateData,
   pclient?: Client,
   offset?: { offsetBlock: Vec3; offsetChunk: Vec3 }
-): Packet[] {
+): Generator<Packet | [...Packet, ((p: Packet) => boolean)], null, null> {
   const bot = stateData.bot;
   //* if not spawned yet, return nothing
-  if (!bot.entity) return [];
+  if (!bot.entity) throw new Error('Entity not spawned yet');
 
   //* load up some helper methods
   const { toNotch: itemToNotch }: typeof import("prismarine-item").Item = require("prismarine-item")(
     pclient?.version ?? bot.version
   );
   const UUID = bot.player.uuid; //pclient?.uuid ??
+  // console.info('UUID is', UUID)
 
-  return [
     // store rawLoginPacket since mineflayer does not handle storing data correctly.
-    ["login", stateData.rawLoginPacket],
+  yield  ["login", stateData.rawLoginPacket]
+
+  yield ["feature_flags", { features: ["minecraft:vanilla"] }]
 
     // unneeded to spawn
     // hardcoded unlocked difficulty because mineflayer doesn't save.
-    ["difficulty", { difficulty: bot.game.difficulty }], //, difficultyLocked: false
+  yield  ["difficulty", { difficulty: bot.game.difficulty }] //, difficultyLocked: false
 
     // unneeded to spawn
     // ability generation seems fine
-    ["abilities", { ...packetAbilities(bot) }],
+  yield  ["abilities", { ...packetAbilities(bot) }]
 
     // unneeded to spawn
     // Updating held item
-    ["held_item_slot", { slot: bot.quickBarSlot ?? 1 }],
+  yield  ["held_item_slot", { slot: bot.quickBarSlot ?? 1 }]
+
+  yield ['declare_recipes', stateData.recipes]
 
     // unneeded to spawn
     // declare recipes (requires prismarine-registry)
 
     // unneeded to spawn
     // load "tags", whatever that is
+    yield ['tags', stateData.tags, (p: Packet) => { return p[0] === 'position' || p[0] === 'positions_look' }]
 
     // unneeded to spawn
     // temporarily hardcoded
-    ["entity_status", { entityId: bot.entity.id, entityStatus: 28 }],
+  yield  ["entity_status", { entityId: bot.entity.id, entityStatus: 28 }]
 
     // unneeded to spawn
     // needed to get commands from server.
     // ["declare_commands", stateData.rawCommandPacket],
 
     // unneeded to spawn
-    // unlock recipes
+    yield ['unlock_recipes', stateData.unlockRecipes]
 
     // NEEDED TO SPAWN
     // Update position of entity
-    [
+  yield  [
       "position",
       {
         ...bot.entity.position,
         yaw: 180 - (bot.entity.yaw * 180) / Math.PI,
         pitch: -(bot.entity.pitch * 180) / Math.PI,
+        teleportId: 1,
       },
-    ],
+    ]
 
     // unneeded to spawn
     // get server motd & enforceChatShit
     // NOTE: we should probably intercept this packet and store since, well, MOTD isn't stored by minecraft-protocol
-    [
+  yield  [
       "server_data",
       {
         motd: '{"text":"lmao placeholder"}',
         enforcesSecureChat: (bot._client as any).serverFeatures.enforcesSecureChat,
       },
-    ],
+    ]
 
-    // unneeded to spawn
+    // unneeded to spawn. Yes it is.
+  yield  [ 
+      'player_info', 
+      {
+        action: 63,
+        data: []
+      }
+    ]
+  
+  if (!pclient?.uuid) throw new Error('No uuid for pclient')
+  yield [
+      'player_info',
+      {
+        action: 63,
+        data: [
+          {
+            uuid: pclient.uuid,
+            name: pclient?.username || 'Placeholder',
+            properties: [],
+            player: { name: pclient?.username || 'Placeholder', properties: [] },
+            gamemode: bot.player.gamemode,
+            ping: bot.player.ping,
+            displayName: undefined,
+            listed: true,
+          },
+        ],
+      },
+    ]
     // fills in tablist and other info
     // Spawns in named entities and players.
-    ...Object.values(bot.players).reduce<Packet[]>((packets, { uuid, username, gamemode, ping, entity }) => {
+    for (const packet of Object.values(bot.players).reduce<Packet[]>((packets, { uuid, username, gamemode, ping, entity }) => {
       if (uuid !== UUID) {
         packets.push([
           //   "player_info",
@@ -174,15 +207,40 @@ export function generatePackets(
         }
       }
       return packets;
-    }, []),
+    }, [])) {
+      yield packet;
+    }
+
+    // world boarder
+    yield ['initialize_world_boarder', {
+      x: 0,
+      z: 0,
+      oldDiameter: 59999968,
+      newDiameter: 59999968,
+      speed: 0,
+      portalTeleportBoundary: 29999984,
+      warningBlocks: 5,
+      warningTime: 15
+    }]
 
     // unneeded to spawn
     // set time to remote bot's
-    ["update_time", { age: Number(bot.time.bigAge), time: Number(bot.time.bigTime) }],
+    yield ["update_time", { age: Number(bot.time.bigAge), time: Number(bot.time.bigTime) }]
+
+    // spawn position
+    yield ['spawn_position', {
+      location:
+      {
+        x: 0,
+        z: -64,
+        y: 73
+      },
+      angle: 0
+    }]
 
     // unneeded to spawn
     // set view pos to chunk we're spawning in
-    ["update_view_position", { chunkX: bot.entity.position.x >> 4, chunkZ: bot.entity.position.z >> 4 }],
+    yield ["update_view_position", { chunkX: -14, chunkZ: 0 }]
 
     // ! NOTICE !
     // everything afterward is not vanilla, we add to sync.
@@ -190,17 +248,17 @@ export function generatePackets(
     // unneeded for spawn
     // NOT VANILLA
     // set gamemode as needed (to match bot?)
-    ["game_state_change", { reason: 3, gameMode: bot.player.gamemode }],
+    yield ["game_state_change", { reason: 3, gameMode: bot.player.gamemode }]
 
     // unneeded for spawn
     // NOT VANILLA
     // set health/food to remote bot's
-    ["update_health", { health: bot.health, food: bot.food, foodSaturation: bot.foodSaturation }],
+    yield ["update_health", { health: bot.health, food: bot.food, foodSaturation: bot.foodSaturation }]
 
     // unneeded for spawn
     // NOT VANILLA
     // set items to remote bot's
-    [
+    yield [
       "window_items",
       {
         windowId: 0,
@@ -208,10 +266,12 @@ export function generatePackets(
         items: bot.inventory.slots.map((item: any) => itemToNotch(item)),
         carriedItem: { present: false },
       },
-    ],
+    ];
 
     // ["map_chunk", bot.world.getColumns().map((c: any) => convertPackets(c))],
-    ...(bot.world.getColumns() as any[]).reduce((packets, c) => [...packets, ["map_chunk", convertPackets(c)]], []),
+    for (const packet of (bot.world.getColumns() as any[]).reduce<Packet[]>((packets, c) => [...packets, ["map_chunk", convertPackets(c)]], [])) {
+      yield packet;
+    }
 
     // ...(bot.world.getColumns() as any[])[0].reduce<Packet[]>((packets, chunk) => [...packets, convertPackets(chunk)], []),
     //   // //? `world_border` (as of 1.12.2) => really needed?
@@ -220,11 +280,13 @@ export function generatePackets(
     //   // ...(bot.isRaining ? [['game_state_change', { reason: 1, gameMode: 0 }]] : []),
     //   // ...((bot as any).rainState !== 0 ? [['game_state_change', { reason: 7, gameMode: (bot as any).rainState }]] : []),
     //   // ...((bot as any).thunderState !== 0 ? [['game_state_change', { reason: 8, gameMode: (bot as any).thunderState }]] : []),
-  ] as Packet[];
+    return null
 }
 
+let logged = false;
+
 function convertPackets(chunk: any) {
-  const data1 = chunk.column.dumpLight();
+  const lightDump = chunk.column.dumpLight();
   // if (chunk.chunkX == 7 && chunk.chunkZ == 18) {
   //   fs.writeFileSync(
   //     "fuck.json",
@@ -265,21 +327,74 @@ function convertPackets(chunk: any) {
     z: Number(chunk.chunkZ),
   };
 
-  if (!!data1) {
-    (ret.skyLightMask = data1.skyLightMask),
-      (ret.blockLightMask = data1.blockLightMask),
-      (ret.emptySkyLightMask = data1.emptySkyLightMask),
-      (ret.emptyBlockLightMask = data1.emptyBlockLightMask),
-      (ret.skyLight = data1.skyLight.map((d: any) => Array.from(d))), // I don't think this is necessary.
-      (ret.blockLight = data1.blockLight.map((d: any) => Array.from(d))); // I don't think this is necessary.
+  if (!!lightDump) {
+    ret.skyLightMask = lightDump.skyLightMask;
+    ret.blockLightMask = lightDump.blockLightMask;
+    ret.emptySkyLightMask = lightDump.emptySkyLightMask;
+    ret.emptyBlockLightMask = lightDump.emptyBlockLightMask;
+    ret.skyLight = lightDump.skyLight.map((d: any) => Array.from(d)); // I don't think this is necessary.
+    ret.blockLight = lightDump.blockLight.map((d: any) => Array.from(d)); // I don't think this is necessary.
   } else {
     ret.groundUp = true;
     ret.bitMap = chunk.column.getMask();
   }
+  ret.heightmaps = { // ITS FUCKING heightmaps INSTEAD OF heightMaps reeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+    type: 'compound',
+    name: '',
+    value: {
+      MOTION_BLOCKING: {
+        type: 'longArray',
+        value: [[533719027, -100860289],
+        [533719027, -100860289],
+        [533719027, -100860289],
+        [533719027, -100860289],
+        [533719027, -100860289],
+        [533719027, -100860289],
+        [533719027, -100860289],
+        [533719027, -100860289],
+        [533719027, -100860289],
+        [533719027, -100860289],
+        [533719027, -100860289],
+        [533719027, -100860289],
+        [533719027, -100860289],
+        [533719027, -100860289],
+        [533719027, -100860289],
+        [533719027, -100860289],
+        [533719027, -100860289],
+        [533719027, -100860289],
+        [533719027, -100860289],
+        [533719027, -100860289],
+        [533719027, -100860289],
+        [533719027, -100860289],
+        [533719027, -100860289],
+        [533719027, -100860289],
+        [533719027, -100860289],
+        [533719027, -100860289],
+        [533719027, -100860289],
+        [533719027, -100860289],
+        [533719027, -100860289],
+        [533719027, -100860289],
+        [533719027, -100598145],
+        [533719027, -100860289],
+        [533719027, -100860289],
+        [533719027, -100860289],
+        [533719027, -100855169],
+        [533719027, -100860289],
+        [4, 1780809343]] // Work on my machine
+      }
+    }
+  }
+  ret.trustEdges = true
 
   ret.chunkData = chunk.column.dump();
-  if (Object.keys(chunk.column.blockEntities).length)
-  ret.blockEntities = [chunk.column.blockEntities]; //chunk.column.blockEntities;
+  // if (Object.keys(chunk.column.blockEntities).length) {
+  //   console.info(Object.values(chunk.column.blockEntities))
+  //   ret.blockEntities = Object.values(chunk.column.blockEntities); //chunk.column.blockEntities;
+  // } else {
+  //   ret.blockEntities = []
+  // }
+
+  ret.blockEntities = []
 
   // if (chunk.chunkX == 7 && chunk.chunkZ == 18) {
   // console.log(ret)
@@ -289,7 +404,6 @@ function convertPackets(chunk: any) {
   // );
   // }
 
-  console.log(ret.blockEntities);
   return ret;
   // const chunkData = new SmartBuffer();
   // return {
@@ -560,10 +674,10 @@ function getChunkEntityPacketsWithOffset(
   offset = offset ?? { offsetBlock: new Vec3(0, 0, 0), offsetChunk: new Vec3(0, 0, 0) };
   const packets: Packet[] = [];
   if (Object.values(blockEntities).length)
-    console.info(
-      "Block entities: ",
-      Object.values(blockEntities).map((b) => b.value.id.value)
-    );
+    // console.info(
+    //   "Block entities: ",
+    //   Object.values(blockEntities).map((b) => b.value.id.value)
+    // );
   for (const nbtData of Object.values(blockEntities)) {
     const locationOriginal = new Vec3(nbtData.value.x.value, nbtData.value.y.value, nbtData.value.z.value);
     const location = locationOriginal.minus(offset.offsetBlock);

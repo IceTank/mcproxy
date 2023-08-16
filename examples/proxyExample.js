@@ -7,7 +7,7 @@ const minecraft_protocol = require('minecraft-protocol');
 // https://github.com/PrismarineJS/mineflayer
 let conn = new mcproxy.Conn({
   username: 'proxyBot',
-  version: '1.20.1',
+  version: '1.19.4',
   host: 'localhost',
   port: 25565,
   skipValidation: true,
@@ -28,7 +28,7 @@ conn.stateData.bot.on('end', (reason) => {
 // open a server
 // https://github.com/PrismarineJS/node-minecraft-protocol
 const server = minecraft_protocol.createServer({
-  version: '1.20.1',
+  version: '1.19.4',
   host: 'localhost',
   'online-mode': false,
   port: 25566,

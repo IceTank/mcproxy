@@ -14,5 +14,5 @@
     "outDir": "lib/",
     "lib": ["es6", "dom", "es2020"]
   },
-  "exclude": ["./examples"]
+  "exclude": ["./examples", "./lib"]
 }
