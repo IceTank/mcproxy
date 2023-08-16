@@ -107,7 +107,8 @@ export function* generatePackets(
 
   // unneeded to spawn
   // needed to get commands from server.
-  // yield ["declare_commands", stateData.rawCommandPacket];
+  // CAUSES CRASH ON 1.12
+  yield ["declare_commands", stateData.rawCommandPacket];
 
   // unneeded to spawn
   // unlock recipes
@@ -128,6 +129,7 @@ export function* generatePackets(
   // unneeded to spawn
   // get server motd & enforceChatShit
   // NOTE: we should probably intercept this packet and store since, well, MOTD isn't stored by minecraft-protocol
+  // NOTE: CRASHES 1.12
   // [
   //   "server_data",
   //   {
@@ -145,7 +147,7 @@ export function* generatePackets(
 
   // unneeded to spawn
   // set time to remote bot's
-  // 1.12.2 requires not bigInt, 1.20 does.
+  // NOTE: 1.12.2 requires not bigInt, 1.20 does.
   yield ["update_time", { age: bot.time.bigAge, time: bot.time.bigTime }];
 
   // // spawn position
