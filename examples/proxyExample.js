@@ -3,13 +3,18 @@
 const mcproxy = require('..');
 const minecraft_protocol = require('minecraft-protocol');
 
+const VERSION = '1.19.4';
+const REMOTE_HOST = 'localhost';
+const REMOTE_PORT = 25565;
+const LOCAL_PORT = 25566;
+
 // initialize bot instance like you would with mineflayer
 // https://github.com/PrismarineJS/mineflayer
 let conn = new mcproxy.Conn({
   username: 'proxyBot',
-  version: '1.20.1',
-  host: 'localhost',
-  port: 25565,
+  version: VERSION,
+  host: REMOTE_HOST,
+  port: REMOTE_PORT,
   skipValidation: true,
 });
 
@@ -28,14 +33,14 @@ conn.stateData.bot.on('end', (reason) => {
 // open a server
 // https://github.com/PrismarineJS/node-minecraft-protocol
 const server = minecraft_protocol.createServer({
-  version: '1.20.1',
+  version: VERSION,
   host: 'localhost',
   'online-mode': false,
-  port: 25566,
+  port: LOCAL_PORT,
 });
 
 server.on('listening', () => {
-  console.info('Listening on', 25566);
+  console.info('Listening on', LOCAL_PORT);
 });
 
 // accept client connections on your server,

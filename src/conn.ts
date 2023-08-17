@@ -17,6 +17,8 @@ export type Client = mcpClient & {
   toClientMiddlewares: PacketMiddleware[];
   toServerMiddlewares: PacketMiddleware[];
 
+  lastDelimiter: number;
+
   on(event: 'mcproxy:detach', listener: () => void): void;
   on(event: 'mcproxy:heldItemSlotUpdate', listener: () => void): void;
 };
@@ -105,6 +107,24 @@ export class Conn {
     this.client.on('raw', this.onServerRaw.bind(this));
   }
 
+  static writeTo(pclient: Client, name: string, data: any) {
+    pclient.write(name, data);
+    if (pclient.lastDelimiter++ > 20) {
+      // console.info('Delimiter reset')
+      pclient.lastDelimiter = 0;
+      pclient.write('bundle_delimiter', { });
+    }
+  }
+
+  static writeRawTo(pclient: Client, buffer: Buffer) {
+    pclient.writeRaw(buffer);
+    if (pclient.lastDelimiter++ > 20) {
+      // console.info('Delimiter reset')
+      pclient.lastDelimiter = 0;
+      pclient.write('bundle_delimiter', { });
+    }
+  }
+
   /**
    * Called when the proxy bot receives a packet from the server. Forwards the packet to all attached and receiving clients taking
    * attached middleware's into account.
@@ -157,14 +177,14 @@ export class Conn {
       if (isCanceled) continue;
       if (meta.name === 'custom_payload') {
         // Workaround for broken custom_payload packets
-        pclient.writeRaw(buffer);
+        Conn.writeRawTo(pclient, buffer)
         return;
       }
       if (!wasChanged && this.optimizePacketWrite) {
-        pclient.writeRaw(buffer);
+        Conn.writeRawTo(pclient, buffer)
         continue;
       }
-      pclient.write(meta.name, currentData);
+      Conn.writeTo(pclient, meta.name, currentData);
     }
   }
 
@@ -227,7 +247,7 @@ export class Conn {
         if (!transformedData) return false
         if (transformedData.length > 1) {
           transformedData.forEach(packet => {
-            packetData.pclient?.write(packet[0], packet[1])
+            packetData.pclient && Conn.writeTo(packetData.pclient, packet[0], packet[1]);
           })
           return false
         }
@@ -254,7 +274,7 @@ export class Conn {
           const p = this.stateData.bot.entity.position
           toSendPos = transformer.sToC.offsetXYZ(p.x, p.y, p.z)
         }
-        pclient.write('position', {
+        Conn.writeTo(pclient, 'position', {
           ...toSendPos,
           yaw: 180 - (this.stateData.bot.entity.yaw * 180) / Math.PI,
           pitch: -(this.stateData.bot.entity.pitch * 180) / Math.PI,
@@ -319,7 +339,7 @@ export class Conn {
    * generic packets.
    * @param pclient Optional. Does nothing.
    */
-  * generatePackets(pclient?: Client): Generator<Packet, void, void> {
+  * generatePackets(pclient?: Client): Generator<Packet, void, unknown> {
     if (this.positionTransformer) {
       const transformer = this.positionTransformer
       const packets: Packet[] = []
@@ -347,6 +367,7 @@ export class Conn {
    */
   attach(pclient: Client, options?: { toClientMiddleware?: PacketMiddleware[]; toServerMiddleware?: PacketMiddleware[] }) {
     if (!this.pclients.includes(pclient)) {
+      if (pclient.lastDelimiter === undefined) pclient.lastDelimiter = 0;
       this.clientServerDefaultMiddleware(pclient);
       this.serverClientDefaultMiddleware(pclient);
       this.pclients.push(pclient);
@@ -360,6 +381,9 @@ export class Conn {
         cleanup();
         this.detach(pclient);
       });
+      setInterval(() => { // TODO: remove this but be warned this will break everything or break nothing idfk
+        Conn.writeTo(pclient, 'bundle_delimiter', { }) 
+      }, 100)
       if (options?.toClientMiddleware) pclient.toClientMiddlewares.push(...options.toClientMiddleware);
       if (options?.toServerMiddleware) {
         pclient.toServerMiddlewares.push(...options.toServerMiddleware);

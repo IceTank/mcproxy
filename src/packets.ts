@@ -82,6 +82,9 @@ export function* generatePackets(
 
   // store rawLoginPacket since mineflayer does not handle storing data correctly.
   yield ["login", stateData.rawLoginPacket],
+
+  // Probably not needed to spawn
+  yield ["feature_flags", { features: ["minecraft:vanilla"] }]
   
   // unneeded to spawn
   // hardcoded unlocked difficulty because mineflayer doesn't save.
@@ -97,9 +100,15 @@ export function* generatePackets(
 
   // unneeded to spawn
   // declare recipes (requires prismarine-registry)
+  if (!stateData.rawRecipes) {
+    console.warn("No recipes found, this may cause issues.");
+  } else {
+    yield ['declare_recipes', stateData.rawRecipes]
+  }
 
   // unneeded to spawn
   // load "tags", whatever that is
+  yield ['tags', stateData.rawTags]
 
   // unneeded to spawn
   // temporarily hardcoded
@@ -112,6 +121,11 @@ export function* generatePackets(
 
   // unneeded to spawn
   // unlock recipes
+  if (!stateData.rawUnlockRecipes) {
+    console.warn("No unlock recipes found, this may cause issues.");
+  } else {
+    yield ['unlock_recipes', stateData.rawUnlockRecipes]
+  }
 
   // NEEDED TO SPAWN
   // Update position of entity
@@ -137,13 +151,42 @@ export function* generatePackets(
   //     enforcesSecureChat: (bot._client as any).serverFeatures.enforcesSecureChat,
   //   },
   // ],
+  if (pclient?.version !== '1.12.2') {
+    yield  [
+      "server_data",
+      {
+        motd: '{"text":"lmao placeholder"}',
+        enforcesSecureChat: (bot._client as any).serverFeatures.enforcesSecureChat,
+      },
+    ]
+  }
 
-  // unneeded to spawn
+  // needed to spawn
+  // First clear everything (?) idk but vanilla sends that too
+  yield  [ 
+    'player_info', 
+    {
+      action: 63,
+      data: []
+    }
+  ]
   // fills in tablist and other info
   // Spawns in named entities and players.
   for (const val of convertPlayers(bot.players, UUID)) {
     yield val;
   }
+
+  // world boarder
+  yield ['initialize_world_boarder', {
+    x: 0,
+    z: 0,
+    oldDiameter: 59999968,
+    newDiameter: 59999968,
+    speed: 0,
+    portalTeleportBoundary: 29999984,
+    warningBlocks: 5,
+    warningTime: 15
+  }]
 
   // unneeded to spawn
   // set time to remote bot's
@@ -156,7 +199,12 @@ export function* generatePackets(
   // unneeded to spawn
   // set view pos to chunk we're spawning in
   // NEEDED TO SPAWN FAST IN 1.19, CAUSES CRASH IN 1.12
-  yield ["update_view_position", { chunkX: Math.floor(bot.entity.position.x) >> 4, chunkZ: Math.floor(bot.entity.position.z) >> 4 }];
+  if (pclient?.version !== '1.12.2') {
+    yield ["update_view_position", { chunkX: Math.floor(bot.entity.position.x) >> 4, chunkZ: Math.floor(bot.entity.position.z) >> 4 }];
+  }
+
+    // set health/food to remote bot's
+    yield ["update_health", { health: bot.health, food: bot.food, foodSaturation: bot.foodSaturation }];
 
   for (const val of convertWorld(bot.world)) {
     yield val;
