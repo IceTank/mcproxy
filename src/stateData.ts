@@ -1,4 +1,5 @@
 import type { Bot } from 'mineflayer';
+import { Client } from './conn';
 
 export class StateData {
   flying: boolean = false;
@@ -19,7 +20,14 @@ export class StateData {
     this.bot._client.on('declare_recipes', (packet) => this.rawRecipes = packet)
   }
 
-  onCToSPacket(name: string, data: any) {
+  onCToSPacket(name: string, data: any, pclient: Client) {
+    if (pclient.positionPacketsSend === 0 && (name === 'position' || name === 'position_look')) {
+      pclient.positionPacketsSend++;
+      return;
+    }
+    if (name === 'login') {
+      pclient.positionPacketsSend = 0; // @todo: find out if this is what vanilla does
+    }
     switch (name) {
       case 'position':
         this.bot.entity.position.x = data.x;

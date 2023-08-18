@@ -18,6 +18,7 @@ export type Client = mcpClient & {
   toServerMiddlewares: PacketMiddleware[];
 
   lastDelimiter: number;
+  positionPacketsSend: number;
 
   on(event: 'mcproxy:detach', listener: () => void): void;
   on(event: 'mcproxy:heldItemSlotUpdate', listener: () => void): void;
@@ -289,9 +290,9 @@ export class Conn {
       // Keep the bot updated from packets that are send by the controlling client to the server
       if (transformer) {
         const offsetData = transformer.onCToSPacket(meta.name, data)
-        this.stateData.onCToSPacket(meta.name, offsetData);
+        this.stateData.onCToSPacket(meta.name, offsetData, pclient);
       } else {
-        this.stateData.onCToSPacket(meta.name, data);
+        this.stateData.onCToSPacket(meta.name, data, pclient);
       }
       if (meta.name === 'keep_alive') return false; // Already handled by the bot client
     };
@@ -368,6 +369,7 @@ export class Conn {
   attach(pclient: Client, options?: { toClientMiddleware?: PacketMiddleware[]; toServerMiddleware?: PacketMiddleware[] }) {
     if (!this.pclients.includes(pclient)) {
       if (pclient.lastDelimiter === undefined) pclient.lastDelimiter = 0;
+      if (pclient.positionPacketsSend === undefined) pclient.positionPacketsSend = 0;
       this.clientServerDefaultMiddleware(pclient);
       this.serverClientDefaultMiddleware(pclient);
       this.pclients.push(pclient);
