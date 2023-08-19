@@ -81,14 +81,14 @@ export function* generatePackets(
   const UUID = bot.player.uuid; //pclient?.uuid ??
 
   // store rawLoginPacket since mineflayer does not handle storing data correctly.
-  yield ["login", stateData.rawLoginPacket],
+  yield ["login", stateData.rawLoginPacket];
 
   // Probably not needed to spawn
   yield ["feature_flags", { features: ["minecraft:vanilla"] }]
   
   // unneeded to spawn
   // hardcoded unlocked difficulty because mineflayer doesn't save.
-  yield ["difficulty", { difficulty: bot.game.difficulty, difficultyLocked: false }];
+  yield ["difficulty", { difficulty: bot.game.difficulty, difficultyLocked: false }]; // , 
 
   // unneeded to spawn
   // ability generation seems fine
@@ -108,7 +108,7 @@ export function* generatePackets(
 
   // unneeded to spawn
   // load "tags", whatever that is
-  yield ['tags', stateData.rawTags]
+  // yield ['tags', stateData.rawTags]
 
   // unneeded to spawn
   // temporarily hardcoded
@@ -117,6 +117,7 @@ export function* generatePackets(
   // unneeded to spawn
   // needed to get commands from server.
   // CAUSES CRASH ON 1.12
+  if (pclient?.version !== '1.12.2')
   yield ["declare_commands", stateData.rawCommandPacket];
 
   // unneeded to spawn
@@ -135,8 +136,8 @@ export function* generatePackets(
       ...bot.entity.position,
       yaw: 180 - (bot.entity.yaw * 180) / Math.PI,
       pitch: -(bot.entity.pitch * 180) / Math.PI,
-      flags: 0,
-      teleportId: 1,
+      // flags: 0,
+      // teleportId: 1,
     },
   ];
 
@@ -144,13 +145,7 @@ export function* generatePackets(
   // get server motd & enforceChatShit
   // NOTE: we should probably intercept this packet and store since, well, MOTD isn't stored by minecraft-protocol
   // NOTE: CRASHES 1.12
-  // [
-  //   "server_data",
-  //   {
-  //     motd: '{"text":"lmao placeholder"}',
-  //     enforcesSecureChat: (bot._client as any).serverFeatures.enforcesSecureChat,
-  //   },
-  // ],
+
   if (pclient?.version !== '1.12.2') {
     yield  [
       "server_data",
@@ -252,16 +247,16 @@ const convertPlayers = (players: Record<string, Player>, UUID: string): Packet[]
   for (const key in players) {
     const { uuid, username, gamemode, ping, entity } = players[key];
     packets.push([
-      "player_info",
-      {
-        action: 63,
-        data: [{ uuid, player: { name: username, properties: [] }, gamemode, latency: ping, listed: true }],
-      },
       // "player_info",
       // {
-      //   action: 0,
-      //   data: [{ UUID: uuid, name: username, properties: [], gamemode, ping, displayName: undefined }],
+      //   action: 63,
+      //   data: [{ uuid, player: { name: username, properties: [] }, gamemode, latency: ping, listed: true }],
       // },
+      "player_info",
+      {
+        action: 0,
+        data: [{ UUID: uuid, name: username, properties: [], gamemode, ping, displayName: undefined }],
+      },
     ]);
     if (uuid === UUID) continue; // skip this if its us.
     if (entity) {
