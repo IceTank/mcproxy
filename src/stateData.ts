@@ -21,7 +21,7 @@ export class StateData {
   }
 
   onCToSPacket(name: string, data: any, pclient: Client) {
-    if (pclient.positionPacketsSend === 0 && (name === 'position' || name === 'position_look')) {
+    if (pclient.version !== '1.12.2' && pclient.positionPacketsSend === 0 && (name === 'position' || name === 'position_look')) {
       pclient.positionPacketsSend++;
       return;
     }

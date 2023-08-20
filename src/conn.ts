@@ -18,7 +18,12 @@ export type Client = mcpClient & {
   toServerMiddlewares: PacketMiddleware[];
 
   lastDelimiter: number;
+  /** Set when a client is attached. Keeps track of the position packets send by the client that need to be ignored by mcproxy. */
   positionPacketsSend: number;
+  /** Set when sendPackets is called on pclient. 
+   * Stores the teleport id used by mcproxy when sending login packets to the client that is then block when the client sends a teleport confirm packet. 
+   */
+  sendTeleportId: number;
 
   on(event: 'mcproxy:detach', listener: () => void): void;
   on(event: 'mcproxy:heldItemSlotUpdate', listener: () => void): void;
@@ -198,6 +203,11 @@ export class Conn {
   onClientPacket(data: any, meta: PacketMeta, buffer: Buffer, pclient: Client) {
     if (meta.state !== 'play') return;
     const handle = async () => {
+      if (meta.name === 'teleport_confirm' && data?.teleportId === pclient.sendTeleportId) {
+        console.info('Teleport confirm', data.teleportId)
+        pclient.sendTeleportId = 0;
+        return
+      }
       let packetData: PacketData = {
         bound: 'server',
         meta,
@@ -329,6 +339,7 @@ export class Conn {
    * @param pclient
    */
   sendPackets(pclient: Client) {
+    if (pclient.sendTeleportId === undefined) pclient.sendTeleportId = 1;
     for (const packet of this.generatePackets(pclient)) {
       pclient.write(...packet)
     }
