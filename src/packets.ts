@@ -84,7 +84,7 @@ export function* generatePackets(
   yield ["login", stateData.rawLoginPacket];
 
   // Probably not needed to spawn
-  yield ["feature_flags", { features: ["minecraft:vanilla"] }]
+  // yield ["feature_flags", { features: ["minecraft:vanilla"] }]
   
   // unneeded to spawn
   // hardcoded unlocked difficulty because mineflayer doesn't save.
@@ -98,38 +98,38 @@ export function* generatePackets(
   // Updating held item
   yield ["held_item_slot", { slot: bot.quickBarSlot ?? 1 }];
 
-  // unneeded to spawn
-  // declare recipes (requires prismarine-registry)
-  if (!stateData.rawRecipes) {
-    console.warn("No recipes found, this may cause issues.");
-  } else {
-    yield ['declare_recipes', stateData.rawRecipes]
-  }
+  // // unneeded to spawn
+  // // declare recipes (requires prismarine-registry)
+  // if (!stateData.rawRecipes) {
+  //   console.warn("No recipes found, this may cause issues.");
+  // } else {
+  //   yield ['declare_recipes', stateData.rawRecipes]
+  // }
 
-  // unneeded to spawn
-  // load "tags", whatever that is
+  // // unneeded to spawn
+  // // load "tags", whatever that is
   // yield ['tags', stateData.rawTags]
 
-  // unneeded to spawn
-  // temporarily hardcoded
-  yield ["entity_status", { entityId: bot.entity.id, entityStatus: 28 }];
+  // // unneeded to spawn
+  // // temporarily hardcoded
+  // yield ["entity_status", { entityId: bot.entity.id, entityStatus: 28 }];
 
-  // unneeded to spawn
-  // needed to get commands from server.
-  // CAUSES CRASH ON 1.12
-  if (pclient?.version !== '1.12.2')
-  yield ["declare_commands", stateData.rawCommandPacket];
+  // // unneeded to spawn
+  // // needed to get commands from server.
+  // // CAUSES CRASH ON 1.12
+  // if (pclient?.version !== '1.12.2')
+  // yield ["declare_commands", stateData.rawCommandPacket];
 
-  // unneeded to spawn
-  // unlock recipes
-  if (!stateData.rawUnlockRecipes) {
-    console.warn("No unlock recipes found, this may cause issues.");
-  } else {
-    yield ['unlock_recipes', stateData.rawUnlockRecipes]
-  }
+  // // unneeded to spawn
+  // // unlock recipes
+  // if (!stateData.rawUnlockRecipes) {
+  //   console.warn("No unlock recipes found, this may cause issues.");
+  // } else {
+  //   yield ['unlock_recipes', stateData.rawUnlockRecipes]
+  // }
 
-  // NEEDED TO SPAWN
-  // Update position of entity
+  // // NEEDED TO SPAWN
+  // // Update position of entity
   yield [
     "position",
     {
@@ -141,103 +141,103 @@ export function* generatePackets(
     },
   ];
 
-  // unneeded to spawn
-  // get server motd & enforceChatShit
-  // NOTE: we should probably intercept this packet and store since, well, MOTD isn't stored by minecraft-protocol
-  // NOTE: CRASHES 1.12
+  // // unneeded to spawn
+  // // get server motd & enforceChatShit
+  // // NOTE: we should probably intercept this packet and store since, well, MOTD isn't stored by minecraft-protocol
+  // // NOTE: CRASHES 1.12
 
-  if (pclient?.version !== '1.12.2') {
-    yield  [
-      "server_data",
-      {
-        motd: '{"text":"lmao placeholder"}',
-        enforcesSecureChat: (bot._client as any).serverFeatures.enforcesSecureChat,
-      },
-    ]
-  }
+  // if (pclient?.version !== '1.12.2') {
+  //   yield  [
+  //     "server_data",
+  //     {
+  //       motd: '{"text":"lmao placeholder"}',
+  //       enforcesSecureChat: (bot._client as any).serverFeatures.enforcesSecureChat,
+  //     },
+  //   ]
+  // }
 
-  // needed to spawn
-  // First clear everything (?) idk but vanilla sends that too
-  yield  [ 
-    'player_info', 
-    {
-      action: 63,
-      data: []
-    }
-  ]
-  // fills in tablist and other info
-  // Spawns in named entities and players.
-  for (const val of convertPlayers(bot.players, UUID)) {
-    yield val;
-  }
+  // // needed to spawn
+  // // First clear everything (?) idk but vanilla sends that too
+  // yield  [ 
+  //   'player_info', 
+  //   {
+  //     action: 63,
+  //     data: []
+  //   }
+  // ]
+  // // fills in tablist and other info
+  // // Spawns in named entities and players.
+  // for (const val of convertPlayers(bot.players, UUID)) {
+  //   yield val;
+  // }
 
-  // world boarder
-  yield ['initialize_world_boarder', {
-    x: 0,
-    z: 0,
-    oldDiameter: 59999968,
-    newDiameter: 59999968,
-    speed: 0,
-    portalTeleportBoundary: 29999984,
-    warningBlocks: 5,
-    warningTime: 15
-  }]
+  // // world boarder
+  // yield ['initialize_world_boarder', {
+  //   x: 0,
+  //   z: 0,
+  //   oldDiameter: 59999968,
+  //   newDiameter: 59999968,
+  //   speed: 0,
+  //   portalTeleportBoundary: 29999984,
+  //   warningBlocks: 5,
+  //   warningTime: 15
+  // }]
 
-  // unneeded to spawn
-  // set time to remote bot's
-  // NOTE: 1.12.2 requires not bigInt, 1.20 does.
-  yield ["update_time", { age: bot.time.bigAge, time: bot.time.bigTime }];
+  // // unneeded to spawn
+  // // set time to remote bot's
+  // // NOTE: 1.12.2 requires not bigInt, 1.20 does.
+  // yield ["update_time", { age: bot.time.bigAge, time: bot.time.bigTime }];
 
-  // // spawn position
-  yield ["spawn_position", { location: { x: 0, z: -64, y: 73 }, angle: 0 }];
+  // // // spawn position
+  // yield ["spawn_position", { location: { x: 0, z: -64, y: 73 }, angle: 0 }];
 
-  // unneeded to spawn
-  // set view pos to chunk we're spawning in
-  // NEEDED TO SPAWN FAST IN 1.19, CAUSES CRASH IN 1.12
-  if (pclient?.version !== '1.12.2') {
-    yield ["update_view_position", { chunkX: Math.floor(bot.entity.position.x) >> 4, chunkZ: Math.floor(bot.entity.position.z) >> 4 }];
-  }
+  // // unneeded to spawn
+  // // set view pos to chunk we're spawning in
+  // // NEEDED TO SPAWN FAST IN 1.19, CAUSES CRASH IN 1.12
+  // if (pclient?.version !== '1.12.2') {
+  //   yield ["update_view_position", { chunkX: Math.floor(bot.entity.position.x) >> 4, chunkZ: Math.floor(bot.entity.position.z) >> 4 }];
+  // }
 
-    // set health/food to remote bot's
-    yield ["update_health", { health: bot.health, food: bot.food, foodSaturation: bot.foodSaturation }];
+  //   // set health/food to remote bot's
+  //   yield ["update_health", { health: bot.health, food: bot.food, foodSaturation: bot.foodSaturation }];
 
   for (const val of convertWorld(bot.world)) {
     yield val;
   }
 
+  // // // unneeded for spawn
+  // // // set items to remote bot's
+  // yield [
+  //   "window_items",
+  //   {
+  //     windowId: 0,
+  //     statId: 1,
+  //     items: bot.inventory.slots.map((item: any) => itemToNotch(item)),
+  //     carriedItem: { present: false },
+  //   },
+  // ];
+
+  // //? `world_border` (as of 1.12.2) => really needed?
+  // for (const val of spawnEntities(bot, itemToNotch)) {
+  //   yield val;
+  // }
+
+  // // ...(bot.isRaining ? [['game_state_change', { reason: 1, gameMode: 0 }]] : []),
+  // if ((bot as any).rainState !== 0) yield ["game_state_change", { reason: 7, gameMode: (bot as any).rainState }];
+  // if ((bot as any).thunderState !== 0) yield ["game_state_change", { reason: 8, gameMode: (bot as any).thunderState }];
+
+  // // ! NOTICE !
+  // // everything afterward is not vanilla, we add to sync.
+
   // // unneeded for spawn
-  // // set items to remote bot's
-  yield [
-    "window_items",
-    {
-      windowId: 0,
-      statId: 1,
-      items: bot.inventory.slots.map((item: any) => itemToNotch(item)),
-      carriedItem: { present: false },
-    },
-  ];
+  // // NOT VANILLA
+  // // set gamemode as needed (to match bot?)
+  // yield ["game_state_change", { reason: 3, gameMode: bot.player.gamemode }];
 
-  //? `world_border` (as of 1.12.2) => really needed?
-  for (const val of spawnEntities(bot, itemToNotch)) {
-    yield val;
-  }
-
-  // ...(bot.isRaining ? [['game_state_change', { reason: 1, gameMode: 0 }]] : []),
-  if ((bot as any).rainState !== 0) yield ["game_state_change", { reason: 7, gameMode: (bot as any).rainState }];
-  if ((bot as any).thunderState !== 0) yield ["game_state_change", { reason: 8, gameMode: (bot as any).thunderState }];
-
-  // ! NOTICE !
-  // everything afterward is not vanilla, we add to sync.
-
-  // unneeded for spawn
-  // NOT VANILLA
-  // set gamemode as needed (to match bot?)
-  yield ["game_state_change", { reason: 3, gameMode: bot.player.gamemode }];
-
-  // unneeded for spawn
-  // NOT VANILLA
-  // set health/food to remote bot's
-  yield ["update_health", { health: bot.health, food: bot.food, foodSaturation: bot.foodSaturation }];
+  // // unneeded for spawn
+  // // NOT VANILLA
+  // // set health/food to remote bot's
+  // yield ["update_health", { health: bot.health, food: bot.food, foodSaturation: bot.foodSaturation }];
 
   return;
 }

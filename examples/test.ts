@@ -52,7 +52,8 @@ conn.stateData.bot._client.on('login', console.log)
 // make sure not to use "connection" instead of "login"
 server.on('login', async (client: any) => {
   // send packets recreating the current game state to the client
-  conn.sendPackets(client);
+  conn.syncToRemote(client);
+  // conn.sendPackets(client);
 
   // call .link on the incoming client to make the
   // it the one to receive and send all packets
