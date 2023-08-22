@@ -305,7 +305,6 @@ export class NewConn {
     handle().catch(console.error); // yikes.
   }
 
-
   async processMiddleware(client: Client, currentPacket: PacketData, toClient: boolean) {
     let returnValue: PacketMiddlewareReturnValue;
     let currentData: unknown = currentPacket.data;
@@ -325,6 +324,16 @@ export class NewConn {
       isCanceled,
       currentData,
     };
+  }
+
+  /**
+   * Generate the login sequence off packets for a client from the current bot state. Can take the client as an optional
+   * argument to customize packets to the client state like version but is not used at the moment and defaults to 1.12.2
+   * generic packets.
+   * @param pclient Optional. Does nothing.
+   */
+  *generatePackets(pclient?: Client): Generator<Packet, void, unknown> {
+    for (const val of generatePackets(this.stateData as any, pclient)) yield val;
   }
 }
 
