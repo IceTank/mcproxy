@@ -6,13 +6,13 @@ export class StateData {
   bot: Bot;
   rawLoginPacket: any;
   rawCommandPacket: any;
-  rawTags: any = [];
+  rawTags: any;
   rawRecipes: any[] | null = null;
   rawUnlockRecipes: any | null = null;
 
   constructor(bot: Bot) {
     this.bot = bot;
-
+    this.rawLoginPacket = this.bot.registry.loginPacket;
     this.bot._client.on('login', (packet) => this.rawLoginPacket = packet)
     this.bot._client.on('declare_commands', (packet) => this.rawCommandPacket = packet)
     this.bot._client.on('tags', (packet) => this.rawTags = packet)

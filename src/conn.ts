@@ -113,22 +113,29 @@ export class Conn {
     this.client.on('raw', this.onServerRaw.bind(this));
   }
 
+  static toDelimit(pclient: Client) {
+    return pclient.version !== '1.12.2'
+  }
+
   static writeTo(pclient: Client, name: string, data: any) {
     pclient.write(name, data);
-    if (pclient.lastDelimiter++ > 20) {
+    if (!this.toDelimit(pclient)) return;
+    if (pclient.lastDelimiter++ <= 20) return;
+
       // console.info('Delimiter reset')
-      pclient.lastDelimiter = 0;
-      pclient.write('bundle_delimiter', { });
-    }
+    pclient.lastDelimiter = 0;
+    pclient.write('bundle_delimiter', { });
+    
   }
 
   static writeRawTo(pclient: Client, buffer: Buffer) {
     pclient.writeRaw(buffer);
-    if (pclient.lastDelimiter++ > 20) {
-      // console.info('Delimiter reset')
-      pclient.lastDelimiter = 0;
-      pclient.write('bundle_delimiter', { });
-    }
+    if (!this.toDelimit(pclient)) return;
+    if (pclient.lastDelimiter++ <= 20) return;
+    // console.info('Delimiter reset')
+    pclient.lastDelimiter = 0;
+    pclient.write('bundle_delimiter', { });
+    
   }
 
   /**
@@ -341,6 +348,7 @@ export class Conn {
   sendPackets(pclient: Client) {
     if (pclient.sendTeleportId === undefined) pclient.sendTeleportId = 1;
     for (const packet of this.generatePackets(pclient)) {
+      console.log(packet)
       pclient.write(...packet)
     }
   }
@@ -394,9 +402,13 @@ export class Conn {
         cleanup();
         this.detach(pclient);
       });
-      setInterval(() => { // TODO: remove this but be warned this will break everything or break nothing idfk
-        Conn.writeTo(pclient, 'bundle_delimiter', { }) 
-      }, 100)
+
+      if (Conn.toDelimit(pclient)) {
+        setInterval(() => { // TODO: remove this but be warned this will break everything or break nothing idfk
+          Conn.writeTo(pclient, 'bundle_delimiter', { }) 
+        }, 100)
+      }
+   
       if (options?.toClientMiddleware) pclient.toClientMiddlewares.push(...options.toClientMiddleware);
       if (options?.toServerMiddleware) {
         pclient.toServerMiddlewares.push(...options.toServerMiddleware);

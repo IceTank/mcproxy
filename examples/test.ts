@@ -4,21 +4,27 @@ import * as mcproxy from '../src';
 const minecraft_protocol = require('minecraft-protocol');
 
 
-const version = '1.19.4'
-const str = 'Generel2.aternos.me'
-const host = str.split(':')[0]
+
+const str = process.argv[2] ?? 'Generel2.aternos.me'
+const version = process.argv[3] ?? '1.19.4'
+const host =  str.split(':')[0]
 const port = Number(str.split(':')[1])
+
+console.log(
+  host,
+  port,  version)
 
 // initialize bot instance like you would with mineflayer
 // https://github.com/PrismarineJS/mineflayer
 let conn = new mcproxy.Conn({
   username: 'Generel_Schwerz',
-  auth: 'microsoft',
+  auth: 'offline',
   version,
   host,
   port,
-  // skipValidation: true,
+  skipValidation: true,
 });
+
 
 // do stuff with your bot
 conn.stateData.bot.on('spawn', async () => {
