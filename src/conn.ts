@@ -348,7 +348,6 @@ export class Conn {
   sendPackets(pclient: Client) {
     if (pclient.sendTeleportId === undefined) pclient.sendTeleportId = 1;
     for (const packet of this.generatePackets(pclient)) {
-      console.log(packet)
       pclient.write(...packet)
     }
   }
