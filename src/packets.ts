@@ -66,6 +66,12 @@ export function sendTo(pclient: Client, ...args: PacketTuple[]) {
     }
 }
 
+/**
+ * Notes:
+ * feature_flags crashes versions that doesn't include it.
+ * 
+ */
+
 export function* generatePackets(
     stateData: StateData,
     pclient?: Client,
@@ -84,10 +90,6 @@ export function* generatePackets(
 
     // store rawLoginPacket since mineflayer does not handle storing data correctly.
     yield ["login", stateData.rawLoginPacket];
-
-    // Probably not needed to spawn
-    // ! crashes 1.12.2
-    // yield ["feature_flags", { features: ["minecraft:vanilla"] }];
 
     // unneeded to spawn
     // hardcoded unlocked difficulty because mineflayer doesn't save.
@@ -168,9 +170,6 @@ export function* generatePackets(
     if (refData.isNewerOrEqualTo("1.13")) {
         yield ["update_view_position", { chunkX: Math.floor(bot.entity.position.x) >> 4, chunkZ: Math.floor(bot.entity.position.z) >> 4 }];
     }
-
-    // set health/food to remote bot's
-    yield ["update_health", { health: bot.health, food: bot.food, foodSaturation: bot.foodSaturation }];
 
     for (const val of convertWorld(bot.world)) {
         yield val;
