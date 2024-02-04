@@ -36,6 +36,7 @@ export class ConnOptions {
   //* Middleware to control packets being sent from the client to the server
   toServerMiddleware?: PacketMiddleware[] = [];
   positionTransformer?: IPositionTransformer | Vec3
+  keepAlivePackets?: boolean = true
 }
 
 export interface packetUpdater {
@@ -311,7 +312,7 @@ export class Conn {
       } else {
         this.stateData.onCToSPacket(meta.name, data, pclient);
       }
-      if (meta.name === 'keep_alive') return false; // Already handled by the bot client
+      if (this.options.keepAlivePackets && meta.name === 'keep_alive') return false; // Already handled by the bot client
     };
     pclient.toServerMiddlewares.push(_internalMcProxyClientServer.bind(this));
     if (this.positionTransformer) {
@@ -327,9 +328,9 @@ export class Conn {
   }
 
   private getBotToServerMiddleware(): PacketMiddleware {
-    const packetWhitelist = ['keep_alive']; // Packets that are send to the server even tho the bot is not controlling
+    // Packets that are send to the server even tho the bot is not controlling
     return ({ meta }) => {
-      if (packetWhitelist.includes(meta.name)) return undefined;
+      if (this.options.keepAlivePackets && meta.name === 'keep_alive') return undefined;
       return this.pclient === undefined ? undefined : false;
     };
   }
