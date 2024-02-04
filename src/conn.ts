@@ -17,7 +17,6 @@ export type Client = mcpClient & {
   toClientMiddlewares: PacketMiddleware[];
   toServerMiddlewares: PacketMiddleware[];
 
-  lastDelimiter: number;
   /** Set when a client is attached. Keeps track of the position packets send by the client that need to be ignored by mcproxy. */
   positionPacketsSend: number;
   /** Set when sendPackets is called on pclient. 
@@ -120,23 +119,10 @@ export class Conn {
 
   static writeTo(pclient: Client, name: string, data: any) {
     pclient.write(name, data);
-    if (!this.toDelimit(pclient)) return;
-    if (pclient.lastDelimiter++ <= 20) return;
-
-      // console.info('Delimiter reset')
-    pclient.lastDelimiter = 0;
-    pclient.write('bundle_delimiter', { });
-    
   }
 
   static writeRawTo(pclient: Client, buffer: Buffer) {
     pclient.writeRaw(buffer);
-    if (!this.toDelimit(pclient)) return;
-    if (pclient.lastDelimiter++ <= 20) return;
-    // console.info('Delimiter reset')
-    pclient.lastDelimiter = 0;
-    pclient.write('bundle_delimiter', { });
-    
   }
 
   /**
@@ -387,7 +373,6 @@ export class Conn {
    */
   attach(pclient: Client, options?: { toClientMiddleware?: PacketMiddleware[]; toServerMiddleware?: PacketMiddleware[] }) {
     if (!this.pclients.includes(pclient)) {
-      if (pclient.lastDelimiter === undefined) pclient.lastDelimiter = 0;
       if (pclient.positionPacketsSend === undefined) pclient.positionPacketsSend = 0;
       this.clientServerDefaultMiddleware(pclient);
       this.serverClientDefaultMiddleware(pclient);
@@ -402,13 +387,11 @@ export class Conn {
         cleanup();
         this.detach(pclient);
       });
-
       if (Conn.toDelimit(pclient)) {
-        setInterval(() => { // TODO: remove this but be warned this will break everything or break nothing idfk
+        setTimeout(() => { // TODO: figure out a better time to send this packet. If this packet is not send here it will mess a lot of things up down the line.
           Conn.writeTo(pclient, 'bundle_delimiter', { }) 
-        }, 100)
+        }, 1000)
       }
-   
       if (options?.toClientMiddleware) pclient.toClientMiddlewares.push(...options.toClientMiddleware);
       if (options?.toServerMiddleware) {
         pclient.toServerMiddlewares.push(...options.toServerMiddleware);
