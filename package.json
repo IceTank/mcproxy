@@ -25,7 +25,6 @@
   "scripts": {
     "build": "npx tsc",
     "prepublish": "npm run build",
-    "postinstall": "npm run build",
     "fix": "standard-markdown --fix"
   },
   "dependencies": {
