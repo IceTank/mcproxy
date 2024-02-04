@@ -118,3 +118,5 @@ dist
 
 # misc stuff
 *.txt
+
+.vscode/
