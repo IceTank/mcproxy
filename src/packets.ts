@@ -162,7 +162,13 @@ export function* generatePackets(
     else yield ["update_time", { age: bot.time.age, time: bot.time.time }];
 
     // spawn position
+    if (refData.isNewerOrEqualTo("1.13")) {
+        yield ["bundle_delimiter", { }]
+    }
     yield ["spawn_position", { location: { x: 0, z: -64, y: 73 }, angle: 0 }];
+    if (refData.isNewerOrEqualTo("1.13")) {
+        yield ["bundle_delimiter", { }]
+    }
 
     // unneeded to spawn
     // set view pos to chunk we're spawning in

@@ -388,9 +388,9 @@ export class Conn {
         this.detach(pclient);
       });
       if (Conn.toDelimit(pclient)) {
-        setTimeout(() => { // TODO: figure out a better time to send this packet. If this packet is not send here it will mess a lot of things up down the line.
-          Conn.writeTo(pclient, 'bundle_delimiter', { }) 
-        }, 1000)
+        // setTimeout(() => { // TODO: figure out a better time to send this packet. If this packet is not send here it will mess a lot of things up down the line.
+        //   Conn.writeTo(pclient, 'bundle_delimiter', { }) 
+        // }, 1000)
       }
       if (options?.toClientMiddleware) pclient.toClientMiddlewares.push(...options.toClientMiddleware);
       if (options?.toServerMiddleware) {
