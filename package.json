@@ -1,6 +1,6 @@
 {
   "name": "@icetank/mcproxy",
-  "version": "1.0.7-beta.1",
+  "version": "1.0.7",
   "description": "a minecraft proxy library powered by mineflayer",
   "keywords": [
     "minecraft",
