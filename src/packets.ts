@@ -66,6 +66,42 @@ export function sendTo(pclient: Client, ...args: PacketTuple[]) {
     }
 }
 
+export function generateLoginPacket(stateData: StateData, pclient?: Client): Packet {
+    if (!stateData.rawLoginPacket) {
+        throw new Error("rawLoginPacket not found");
+    }
+    if (!stateData.rawLoginPacket?.worldNames) {
+        throw new Error("worldNames not found in rawLoginPacket");
+    }
+    if (!stateData.rawLoginPacket?.dimensionCodec) {
+        throw new Error('dimensionCodec not found in rawLoginPacket')
+    }
+    const dimensionCodec = stateData.rawLoginPacket.dimensionCodec;
+    return ["login", {
+        entityId: stateData.bot.entity.id,
+        isHardcore: stateData.bot.game.hardcore,
+        gameMode: stateData.bot.player.gamemode,
+        previousGameMode: -1,
+        worldNames: stateData.rawLoginPacket.worldNames ?? [
+            'minecraft:overworld',
+            'minecraft:the_nether',
+            'minecraft:the_end'
+        ],
+        dimensionCodec: dimensionCodec,
+        worldType: stateData.rawLoginPacket.worldType,
+        worldName: stateData.rawLoginPacket.worldName,
+        hashedSeed: stateData.rawLoginPacket.hashedSeed,
+        maxPlayers: stateData.rawLoginPacket.maxPlayers,
+        viewDistance: stateData.rawLoginPacket.viewDistance,
+        simulationDistance: stateData.rawLoginPacket.simulationDistance,
+        reducedDebugInfo: stateData.rawLoginPacket.reducedDebugInfo,
+        enabledRespawnScreen: stateData.rawLoginPacket.enabledRespawnScreen,
+        isDebug: stateData.rawLoginPacket.isDebug,
+        isFlat: stateData.rawLoginPacket.isFlat,
+        death: stateData.rawLoginPacket.death,
+    }]
+}
+
 /**
  * Notes:
  * feature_flags crashes versions that doesn't include it.
@@ -89,7 +125,7 @@ export function* generatePackets(
     const UUID = bot.player.uuid; //pclient?.uuid ??
 
     // store rawLoginPacket since mineflayer does not handle storing data correctly.
-    yield ["login", stateData.rawLoginPacket];
+    yield generateLoginPacket(stateData, pclient);
 
     // unneeded to spawn
     // hardcoded unlocked difficulty because mineflayer doesn't save.
