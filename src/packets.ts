@@ -67,6 +67,7 @@ export function sendTo(pclient: Client, ...args: PacketTuple[]) {
 }
 
 export function generateLoginPacket(stateData: StateData, pclient?: Client): Packet {
+    const packet = require('../data/1.19.4.login.json')
     if (!stateData.rawLoginPacket) {
         throw new Error("rawLoginPacket not found");
     }
@@ -76,7 +77,6 @@ export function generateLoginPacket(stateData: StateData, pclient?: Client): Pac
     if (!stateData.rawLoginPacket?.dimensionCodec) {
         throw new Error('dimensionCodec not found in rawLoginPacket')
     }
-    const dimensionCodec = stateData.rawLoginPacket.dimensionCodec;
     return ["login", {
         entityId: stateData.bot.entity.id,
         isHardcore: stateData.bot.game.hardcore,
@@ -87,7 +87,7 @@ export function generateLoginPacket(stateData: StateData, pclient?: Client): Pac
             'minecraft:the_nether',
             'minecraft:the_end'
         ],
-        dimensionCodec: dimensionCodec,
+        dimensionCodec: packet.dimensionCodec,
         worldType: stateData.rawLoginPacket.worldType,
         worldName: stateData.rawLoginPacket.worldName,
         hashedSeed: stateData.rawLoginPacket.hashedSeed,
