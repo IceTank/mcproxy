@@ -110,7 +110,9 @@ export class Conn {
       }
     }
 
-    this.client.on('raw', this.onServerRaw.bind(this));
+    console.info('Conn created with optimized packet writing:', this.optimizePacketWrite)
+
+    this.client.on('packet', this.onServerPacket.bind(this));
   }
 
   static toDelimit(pclient: Client) {
@@ -125,31 +127,17 @@ export class Conn {
     pclient.writeRaw(buffer);
   }
 
-  /**
-   * Called when the proxy bot receives a packet from the server. Forwards the packet to all attached and receiving clients taking
-   * attached middleware's into account.
-   * @param buffer Buffer
-   * @param meta
-   * @returns
-   */
-  async onServerRaw(buffer: Buffer, meta: PacketMeta) {
+  onServerPacket(data: any, meta: PacketMeta, buffer: Buffer) {
+    // Not Async so we skip all the promise handling code
     if (meta.state !== 'play') return;
-    
-    let _packetData: any | undefined = undefined;
-    const getPacketData = () => {
-      if (!_packetData) {
-        _packetData = this.client.deserializer.parsePacketBuffer(buffer).data.params;
-      }
-      return _packetData;
-    };
-
-    //* keep mineflayer info up to date
     switch (meta.name) {
       case 'abilities':
-        let packetData = getPacketData();
-        this.stateData.flying = !!((packetData.flags & 0b10) ^ 0b10);
+        this.stateData.flying = !!((data.flags & 0b10) ^ 0b10);
         this.stateData.bot.physicsEnabled = !this.pclient && this.stateData.flying;
     }
+
+    // Check if the packet has changed between middleware stuff
+    const packetHash = JSON.stringify(data);
     for (const pclient of this.pclients) {
       if (pclient.state !== states.PLAY || meta.state !== states.PLAY) {
         continue;
@@ -160,29 +148,16 @@ export class Conn {
         meta,
         writeType: 'packet',
         pclient,
-        data: {},
+        data,
         isCanceled: false,
       };
-      let wasChanged = false;
-      // let isCanceled = false;
-      Object.defineProperties(packetData, {
-        data: {
-          get: () => {
-            wasChanged = true;
-            return getPacketData();
-          },
-        },
-      });
-      const { isCanceled, currentData } = await this.processMiddlewareList(pclient.toClientMiddlewares, packetData);
+      const { isCanceled, currentData } = this.processMiddlewareList(pclient.toClientMiddlewares, packetData);
       if (isCanceled) continue;
-      if (meta.name === 'custom_payload') {
+      // This has a huge performance impact. Re serializing packets from objects is way slower then just sending the buffer if the packet has not changed.
+      if (meta.name === 'custom_payload' || this.optimizePacketWrite && JSON.stringify(currentData) === packetHash) {
         // Workaround for broken custom_payload packets
         Conn.writeRawTo(pclient, buffer)
         return;
-      }
-      if (!wasChanged && this.optimizePacketWrite) {
-        Conn.writeRawTo(pclient, buffer)
-        continue;
       }
       Conn.writeTo(pclient, meta.name, currentData);
     }
@@ -471,14 +446,15 @@ export class Conn {
     this.pclients.forEach(this.detach.bind(this));
   }
 
-  async processMiddlewareList(middlewareList: PacketMiddleware[], currentPacket: PacketData) {
+  processMiddlewareList(middlewareList: PacketMiddleware[], currentPacket: PacketData) {
     let returnValue: PacketMiddlewareReturnValue;
     let currentData: unknown = currentPacket.data;
     let isCanceled = false;
     for (const middleware of middlewareList) {
       const funcReturn = middleware(currentPacket);
       if (funcReturn instanceof Promise) {
-        returnValue = await funcReturn;
+        // returnValue = await funcReturn;
+        throw new Error('Promises are not supported in middleware');
       } else {
         returnValue = funcReturn;
       }
